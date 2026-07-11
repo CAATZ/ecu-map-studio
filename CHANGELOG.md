@@ -6,7 +6,9 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Changed
+
+- Updated the official GitHub workflow actions to their current Node 24-compatible major versions.
 
 ## [1.1.0] - 2026-07-11
 
