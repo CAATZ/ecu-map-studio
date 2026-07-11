@@ -133,8 +133,9 @@ The release helper validates version metadata, lint and formatting, runs the com
 The ignored `release\v1.1.0` directory contains:
 
 - A versioned standalone Windows executable.
-- A portable ZIP containing the executable, manual, README, and changelog.
+- A portable ZIP containing the executable, manual, README, changelog, and license.
 - The illustrated PDF manual.
+- A standalone copy of the MIT License.
 - `SHA256SUMS.txt` for download-integrity verification.
 
 Pushing a matching `v1.1.0` tag runs the same release process in GitHub Actions and creates the GitHub Release. GitHub automatically adds source-code ZIP and TAR archives for the tag.
@@ -173,4 +174,6 @@ ECU Map Studio is developed and tested on Windows. Clipboard integration targets
 
 ## License
 
-No open-source license has been selected yet. Until a license is added, all rights are reserved. Choose an appropriate license before making the repository public.
+ECU Map Studio is available under the [MIT License](LICENSE).
+
+Copyright © 2026 CAATZ.

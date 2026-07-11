@@ -13,3 +13,4 @@
 *.ico binary
 *.pdf binary
 *.png binary
+LICENSE text eol=lf

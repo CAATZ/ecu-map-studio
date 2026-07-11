@@ -13,6 +13,7 @@ $Root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $Python = Join-Path $Root '.venv\Scripts\python.exe'
 $Executable = Join-Path $Root 'dist\ECUMapStudio.exe'
 $Manual = Join-Path $Root 'output\pdf\ECU_Map_Studio_User_Manual.pdf'
+$License = Join-Path $Root 'LICENSE'
 $ReleaseDirectory = Join-Path $Root "release\v$Version"
 
 function Invoke-Checked {
@@ -94,25 +95,36 @@ try {
     if (-not (Test-Path -LiteralPath $Manual -PathType Leaf)) {
         throw 'Published PDF manual was not found.'
     }
+    if (-not (Test-Path -LiteralPath $License -PathType Leaf)) {
+        throw 'MIT License file was not found.'
+    }
 
     New-Item -ItemType Directory -Force -Path $ReleaseDirectory | Out-Null
 
     $ReleaseExecutable = Join-Path $ReleaseDirectory "ECU-Map-Studio-$Version-Windows-x64.exe"
     $ReleaseManual = Join-Path $ReleaseDirectory "ECU-Map-Studio-$Version-Manual.pdf"
+    $ReleaseLicense = Join-Path $ReleaseDirectory 'LICENSE.txt'
     $ReleaseZip = Join-Path $ReleaseDirectory "ECU-Map-Studio-$Version-Windows-x64.zip"
     $Checksums = Join-Path $ReleaseDirectory 'SHA256SUMS.txt'
 
     Copy-Item -Force -LiteralPath $Executable -Destination $ReleaseExecutable
     Copy-Item -Force -LiteralPath $Manual -Destination $ReleaseManual
+    Copy-Item -Force -LiteralPath $License -Destination $ReleaseLicense
 
     Compress-Archive -Force -CompressionLevel Optimal -LiteralPath @(
         $ReleaseExecutable,
         $ReleaseManual,
+        $ReleaseLicense,
         (Join-Path $Root 'README.md'),
         (Join-Path $Root 'CHANGELOG.md')
     ) -DestinationPath $ReleaseZip
 
-    $ChecksumLines = foreach ($Artifact in @($ReleaseExecutable, $ReleaseManual, $ReleaseZip)) {
+    $ChecksumLines = foreach ($Artifact in @(
+        $ReleaseExecutable,
+        $ReleaseManual,
+        $ReleaseLicense,
+        $ReleaseZip
+    )) {
         $Hash = Get-FileHash -Algorithm SHA256 -LiteralPath $Artifact
         '{0}  {1}' -f $Hash.Hash, (Split-Path -Leaf $Artifact)
     }

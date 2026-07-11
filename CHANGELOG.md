@@ -9,6 +9,7 @@ The project follows [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Updated the official GitHub workflow actions to their current Node 24-compatible major versions.
+- Licensed the project and distributed release bundles under the MIT License.
 
 ## [1.1.0] - 2026-07-11
 
