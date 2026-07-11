@@ -1,0 +1,77 @@
+name: Build release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Install build dependencies
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\python -m pip install -r requirements-dev.txt
+
+      - name: Prepare verified release artifacts
+        id: package
+        shell: pwsh
+        run: |
+          $version = $env:GITHUB_REF_NAME.TrimStart('v')
+          .\packaging\prepare_release.ps1 -Version $version
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Preserve build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ECU-Map-Studio-${{ steps.package.outputs.version }}
+          path: release/v${{ steps.package.outputs.version }}/*
+          if-no-files-found: error
+
+      - name: Create GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $version = $tag.TrimStart('v')
+          $directory = "release/v$version"
+          $assets = @(
+            "$directory/ECU-Map-Studio-$version-Windows-x64.exe"
+            "$directory/ECU-Map-Studio-$version-Windows-x64.zip"
+            "$directory/ECU-Map-Studio-$version-Manual.pdf"
+            "$directory/SHA256SUMS.txt"
+          )
+          $arguments = @(
+            'release', 'create', $tag
+            '--verify-tag'
+            '--title', "ECU Map Studio $tag"
+          )
+          $notes = ".github/release-notes/$tag.md"
+          if (Test-Path -LiteralPath $notes) {
+            $arguments += @('--notes-file', $notes)
+          }
+          else {
+            $arguments += '--generate-notes'
+          }
+          $arguments += $assets
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "GitHub release creation failed with exit code $LASTEXITCODE."
+          }

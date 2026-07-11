@@ -1,0 +1,6 @@
+-r requirements.txt
+
+Pillow>=10
+PyInstaller>=6
+reportlab>=4
+ruff>=0.15
