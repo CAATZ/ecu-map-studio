@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = '1.1.0',
+    [string]$Version = '1.2.0',
 
     [switch]$SkipBuild
 )
@@ -77,6 +77,9 @@ try {
         Invoke-Checked {
             & (Join-Path $Root 'build_exe.bat')
         } 'Executable build'
+        Invoke-Checked {
+            & $Python 'packaging\build_user_manual.py'
+        } 'User manual build'
 
         $SmokeProcess = Start-Process `
             -FilePath $Executable `

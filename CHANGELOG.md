@@ -6,6 +6,13 @@ The project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-07-20
+
+### Added
+
+- Added boundary-matched local 4 × 4 and global whole-table least-squares trend extrapolation.
+- Added standard PyInstaller and alternative Nuitka Windows installers.
+
 ### Changed
 
 - Updated the official GitHub workflow actions to their current Node 24-compatible major versions.

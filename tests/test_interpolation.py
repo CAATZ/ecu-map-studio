@@ -61,6 +61,57 @@ class InterpolationTests(unittest.TestCase):
         )
         np.testing.assert_allclose(result.map_data.z[0], [-1, 0, 1, 2])
 
+    def test_edge_trend_reproduces_bilinear_surface_and_is_distance_limited(self):
+        source = self.planar_map()
+        target_x = [-100, 0, 7, 100]
+        target_y = [-100, -2, 9, 100]
+        result = resample_map(
+            source,
+            target_x,
+            target_y,
+            extrapolation="trend",
+            maximum_edge_intervals=1,
+        )
+        limited_x = [-1, 0, 7, 11]
+        limited_y = [-4, -2, 9, 14]
+        yy, xx = np.meshgrid(limited_y, limited_x, indexing="ij")
+        np.testing.assert_allclose(result.map_data.z, 2 * xx + 3 * yy + 5, atol=1e-10)
+
+    def test_edge_trend_uses_more_source_cells_than_limited_linear(self):
+        x = np.asarray([0.0, 1.0, 2.0, 3.0])
+        y = np.asarray([0.0, 1.0, 2.0, 3.0])
+        yy, xx = np.meshgrid(y, x, indexing="ij")
+        values = 10.0 * xx + yy
+        values[:, -1] += 30.0
+        source = MapData(x, y, values)
+
+        linear = resample_map(source, [3, 4], [1, 2], extrapolation="linear")
+        trend = resample_map(source, [3, 4], [1, 2], extrapolation="trend")
+
+        self.assertLess(trend.map_data.z[0, 1], linear.map_data.z[0, 1])
+        self.assertNotEqual(trend.map_data.z[0, 1], trend.bilinear_reference.z[0, 1])
+
+    def test_global_table_trend_uses_cells_outside_the_local_edge_region(self):
+        x = np.arange(6, dtype=float)
+        y = np.arange(6, dtype=float)
+        yy, xx = np.meshgrid(y, x, indexing="ij")
+        values = 2.0 * xx + 3.0 * yy + 5.0
+        changed_values = values.copy()
+        changed_values[0, 0] += 1000.0
+        source = MapData(x, y, values)
+        changed = MapData(x, y, changed_values)
+        target_x = [5, 6]
+        target_y = [4, 5]
+
+        local = resample_map(source, target_x, target_y, extrapolation="trend")
+        changed_local = resample_map(changed, target_x, target_y, extrapolation="trend")
+        global_result = resample_map(source, target_x, target_y, extrapolation="global_trend")
+        changed_global = resample_map(changed, target_x, target_y, extrapolation="global_trend")
+
+        np.testing.assert_allclose(local.map_data.z, changed_local.map_data.z)
+        np.testing.assert_allclose(global_result.map_data.z, local.map_data.z, atol=1e-10)
+        self.assertNotEqual(global_result.map_data.z[0, 1], changed_global.map_data.z[0, 1])
+
     def test_disallow_extrapolation_reports_error(self):
         with self.assertRaises(MapValidationError):
             resample_map(

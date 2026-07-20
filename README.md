@@ -86,6 +86,8 @@ For 2D curves, Linear is the predictable default, PCHIP provides a smoother shap
 | --- | --- |
 | Hold edge values | Clamps out-of-range coordinates to the nearest known boundary. This is the default. |
 | Limited linear | Continues the nearest edge slope for a configurable number of edge intervals. |
+| Local edge trend | Fits the nearest 4 × 4 source region and continues its boundary-matched least-squares trend for a configurable number of edge intervals. |
+| Global table trend | Fits the complete source table and continues its boundary-matched least-squares trend for a configurable number of edge intervals. |
 | Do not extrapolate | Rejects any target grid extending beyond the source range. |
 
 Adding more breakpoints inside the original axis limits is interpolation, not extrapolation. Extrapolation occurs only when a target axis extends beyond a source limit.
@@ -111,7 +113,7 @@ Versioned `.ecumap` project files preserve the loaded source, generated result, 
 
 Use **Clear table / New session** or `Ctrl+N` to reset a map workspace. The 2D curve window provides the equivalent command. Resetting a session does not modify RomRaider or the system clipboard.
 
-## Build the Windows executable
+## Build the Windows packages
 
 Install the build dependencies and run the reproducible build script:
 
@@ -122,23 +124,31 @@ Install the build dependencies and run the reproducible build script:
 
 The single-file application is written to `dist\ECUMapStudio.exe`. Build output is intentionally excluded from version control; publish executables as versioned release assets instead.
 
+To build the standard installer and the alternative Nuitka installer with the locally installed Inno Setup compiler:
+
+```powershell
+.\packaging\build_installers.ps1 -Version 1.2.0 -Iscc C:\tmp\ECUEditor-InnoSetup6\ISCC.exe
+```
+
 ## Prepare a release
 
 The release helper validates version metadata, lint and formatting, runs the complete test suite and source smoke test, builds the executable, runs the packaged smoke test, and prepares versioned artifacts:
 
 ```powershell
-.\packaging\prepare_release.ps1 -Version 1.1.0
+.\packaging\prepare_release.ps1 -Version 1.2.0
 ```
 
-The ignored `release\v1.1.0` directory contains:
+The ignored `release\v1.2.0` directory contains:
 
 - A versioned standalone Windows executable.
 - A portable ZIP containing the executable, manual, README, changelog, and license.
+- Standard PyInstaller and alternative Nuitka installers.
+- A portable Nuitka ZIP.
 - The illustrated PDF manual.
 - A standalone copy of the MIT License.
 - `SHA256SUMS.txt` for download-integrity verification.
 
-Pushing a matching `v1.1.0` tag runs the same release process in GitHub Actions and creates the GitHub Release. GitHub automatically adds source-code ZIP and TAR archives for the tag.
+Publishing remains separate from local packaging. Do not create or push a version tag until the generated installers have been approved.
 
 ## Tests
 

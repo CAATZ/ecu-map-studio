@@ -151,6 +151,9 @@ class WorkflowFeatureTests(unittest.TestCase):
             first = ECUMapMainWindow()
             first.load_demo_map()
             first.method_combo.setCurrentIndex(1)
+            first.extrapolation_combo.setCurrentIndex(
+                first.extrapolation_combo.findData("global_trend")
+            )
             first.column_count.setValue(11)
             first.row_count.setValue(9)
             first.generate_result()
@@ -164,6 +167,7 @@ class WorkflowFeatureTests(unittest.TestCase):
             restored = ECUMapMainWindow()
             self.assertTrue(restored.open_project_file(path=path))
             self.assertEqual(restored.method_combo.currentData(), "pchip")
+            self.assertEqual(restored.extrapolation_combo.currentData(), "global_trend")
             self.assertEqual(restored.column_count.value(), 11)
             self.assertEqual(restored.row_count.value(), 9)
             self.assertIsNotNone(restored.result)

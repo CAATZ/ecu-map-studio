@@ -22,6 +22,8 @@ METHOD_LABELS = {
 EXTRAPOLATION_LABELS = {
     "hold": "Hold edge values",
     "linear": "Limited linear",
+    "trend": "Local edge trend",
+    "global_trend": "Global table trend",
     "disallow": "Do not extrapolate",
 }
 
@@ -91,6 +93,65 @@ def _bilinear_values(
     )
 
 
+def _nearest_axis_indices(axis: np.ndarray, value: float, count: int = 4) -> np.ndarray:
+    count = min(count, axis.size)
+    return np.sort(np.argsort(np.abs(axis - value), kind="stable")[:count])
+
+
+def _least_squares_trend_values(
+    source: MapData,
+    target_x: np.ndarray,
+    target_y: np.ndarray,
+    outside: np.ndarray,
+    *,
+    whole_table: bool,
+) -> np.ndarray:
+    """Extend the boundary using a local or whole-table least-squares bilinear trend."""
+    boundary_x = np.clip(target_x, source.x[0], source.x[-1])
+    boundary_y = np.clip(target_y, source.y[0], source.y[-1])
+    boundary_values = _bilinear_values(source, boundary_x, boundary_y)
+    values = boundary_values.copy()
+
+    for row, column in np.argwhere(outside):
+        anchor_x = float(boundary_x[column])
+        anchor_y = float(boundary_y[row])
+        x_indices = (
+            np.arange(source.x.size) if whole_table else _nearest_axis_indices(source.x, anchor_x)
+        )
+        y_indices = (
+            np.arange(source.y.size) if whole_table else _nearest_axis_indices(source.y, anchor_y)
+        )
+        local_x = source.x[x_indices]
+        local_y = source.y[y_indices]
+        x_scale = max(float(np.max(np.abs(local_x - anchor_x))), np.finfo(float).eps)
+        y_scale = max(float(np.max(np.abs(local_y - anchor_y))), np.finfo(float).eps)
+        normalized_x = (local_x - anchor_x) / x_scale
+        normalized_y = (local_y - anchor_y) / y_scale
+        yy, xx = np.meshgrid(normalized_y, normalized_x, indexing="ij")
+        design = np.column_stack(
+            (
+                np.ones(xx.size),
+                xx.ravel(),
+                yy.ravel(),
+                (xx * yy).ravel(),
+            )
+        )
+        weights = (
+            np.ones(xx.size) if whole_table else 1.0 / (1.0 + xx.ravel() ** 2 + yy.ravel() ** 2)
+        )
+        root_weights = np.sqrt(weights)
+        coefficients, *_ = np.linalg.lstsq(
+            design * root_weights[:, None],
+            source.z[np.ix_(y_indices, x_indices)].ravel() * root_weights,
+            rcond=None,
+        )
+        dx = (float(target_x[column]) - anchor_x) / x_scale
+        dy = (float(target_y[row]) - anchor_y) / y_scale
+        trend_delta = coefficients[1] * dx + coefficients[2] * dy + coefficients[3] * dx * dy
+        values[row, column] += trend_delta
+    return values
+
+
 def _nearest_values(source: MapData, target_x: np.ndarray, target_y: np.ndarray) -> np.ndarray:
     def nearest_indices(axis: np.ndarray, values: np.ndarray) -> np.ndarray:
         right = np.searchsorted(axis, values, side="left")
@@ -134,7 +195,7 @@ def _evaluation_axes(
             np.clip(target_x, source.x[0], source.x[-1]),
             np.clip(target_y, source.y[0], source.y[-1]),
         )
-    if extrapolation == "linear":
+    if extrapolation in {"linear", "trend", "global_trend"}:
         if maximum_edge_intervals <= 0:
             raise MapValidationError("Maximum extrapolation distance must be greater than zero.")
         return (
@@ -175,7 +236,7 @@ def resample_map(
     bilinear = _bilinear_values(ascending_source, eval_x, eval_y)
 
     if method == "bilinear":
-        values = bilinear
+        values = bilinear.copy()
     elif method == "nearest":
         values = _nearest_values(ascending_source, eval_x, eval_y)
     else:
@@ -186,6 +247,16 @@ def resample_map(
         values = _pchip_values(ascending_source, pchip_x, pchip_y)
         if extrapolation == "linear" and np.any(outside):
             values[outside] = bilinear[outside]
+
+    if extrapolation in {"trend", "global_trend"} and np.any(outside):
+        trend = _least_squares_trend_values(
+            ascending_source,
+            eval_x,
+            eval_y,
+            outside,
+            whole_table=extrapolation == "global_trend",
+        )
+        values[outside] = trend[outside]
 
     result_map = MapData(new_x, new_y, values, name=f"{source.name} — resampled")
     reference_map = MapData(new_x, new_y, bilinear, name="Bilinear reference")

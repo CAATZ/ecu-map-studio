@@ -116,7 +116,7 @@ def curve_result_from_dict(value: Any) -> CurveResampleResult:
         or result.linear_reference.size != size
         or result.delta_vs_linear.size != size
         or result.method not in CURVE_METHOD_LABELS
-        or result.extrapolation not in EXTRAPOLATION_LABELS
+        or result.extrapolation not in {"hold", "linear", "disallow"}
     ):
         raise MapValidationError("Project generated-curve dimensions or methods are invalid.")
     return result

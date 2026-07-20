@@ -29,6 +29,7 @@ SCREENSHOTS = ROOT / "tmp" / "pdfs" / "screenshots"
 OUTPUT = ROOT / "output" / "pdf" / "ECU_Map_Studio_User_Manual.pdf"
 ICON = ROOT / "assets" / "ECUMapStudio.png"
 EXE = ROOT / "dist" / "ECUMapStudio.exe"
+VERSION = "1.2.0"
 
 NAVY = colors.HexColor("#080D18")
 NAVY_2 = colors.HexColor("#111827")
@@ -333,7 +334,7 @@ def page_header_footer(canvas, document) -> None:
     canvas.drawString(18 * mm, height - 10.8 * mm, "ECU Map Studio")
     canvas.setFont(FONT, 8)
     canvas.setFillColor(colors.HexColor("#AFC0D5"))
-    canvas.drawRightString(width - 18 * mm, height - 10.8 * mm, "User Manual | Version 1.1.0")
+    canvas.drawRightString(width - 18 * mm, height - 10.8 * mm, f"User Manual | Version {VERSION}")
     canvas.setStrokeColor(GRID)
     canvas.line(18 * mm, 13 * mm, width - 18 * mm, 13 * mm)
     canvas.setFont(FONT, 7.5)
@@ -392,7 +393,7 @@ def build_story():
             Table(
                 [
                     [
-                        Paragraph("Version 1.1.0", STYLES["CoverSub"]),
+                        Paragraph(f"Version {VERSION}", STYLES["CoverSub"]),
                         Paragraph(f"Windows build {build_date}", STYLES["CoverSub"]),
                     ]
                 ],
@@ -437,19 +438,19 @@ def build_story():
         [
             h1("1. Start here"),
             body(
-                "ECU Map Studio is supplied as one Windows executable. It does not require "
-                "Python, Excel, or a separate installer on the destination computer."
+                "ECU Map Studio is supplied as a Windows installer and as portable builds. "
+                "Python and Excel are not required on the destination computer."
             ),
             h2("Run the application"),
             step(
                 1,
-                "Locate the file",
-                "Open the <b>dist</b> folder and find <b>ECUMapStudio.exe</b>.",
+                "Choose a package",
+                "Run the standard or Nuitka Setup executable, or open a portable build.",
             ),
             step(
                 2,
                 "Start it",
-                "Double-click the executable. The first launch can take a few seconds while the single-file package is prepared.",
+                "Use the installed shortcut or double-click <b>ECUMapStudio.exe</b> in a portable build.",
             ),
             step(
                 3,
@@ -458,7 +459,7 @@ def build_story():
             ),
             Spacer(1, 2 * mm),
             box(
-                f"<b>Build identity</b><br/>Version: 1.1.0<br/>Size: {size}<br/>"
+                f"<b>Build identity</b><br/>Version: {VERSION}<br/>Size: {size}<br/>"
                 f"SHA-256: <font name='Courier'>{checksum}</font>",
                 "info",
             ),
@@ -660,6 +661,16 @@ def build_story():
                         "The edge trend is meaningful and a controlled continuation is justified.",
                     ],
                     [
+                        "Local edge trend",
+                        "Fits the nearest 4 x 4 source region and continues its boundary-matched trend.",
+                        "A wider local trend should reduce the influence of the final source cells.",
+                    ],
+                    [
+                        "Global table trend",
+                        "Fits the complete source table and continues its boundary-matched trend.",
+                        "The complete table represents one meaningful global operating trend.",
+                    ],
+                    [
                         "Do not extrapolate",
                         "Rejects any target grid with cells outside the source range.",
                         "You want a hard guardrail against all extrapolation.",
@@ -674,7 +685,8 @@ def build_story():
                 "Slice plots and the 3D surface repeat the amber marking, so extrapolation is not hidden by the color scale."
             ),
             bullet(
-                "PCHIP uses its smooth method inside the known domain; Limited linear uses the predictable bilinear edge slope outside."
+                "PCHIP uses its smooth method inside the known domain; outside it uses the "
+                "selected limited-linear, local-trend, or global-trend policy."
             ),
             box(
                 "Extrapolation is not automatically wrong, and interpolation is not "

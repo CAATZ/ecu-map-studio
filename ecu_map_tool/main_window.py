@@ -627,6 +627,10 @@ class ECUMapMainWindow(QMainWindow):
         self.extrapolation_combo = QComboBox()
         self.extrapolation_combo.addItem("Hold edge values — recommended", "hold")
         self.extrapolation_combo.addItem("Limited linear edge slope", "linear")
+        self.extrapolation_combo.addItem("Local edge trend — 4 × 4 least-squares fit", "trend")
+        self.extrapolation_combo.addItem(
+            "Global table trend — whole-table least-squares fit", "global_trend"
+        )
         self.extrapolation_combo.addItem("Do not extrapolate", "disallow")
         self.extrapolation_combo.currentIndexChanged.connect(self._extrapolation_changed)
         layout.addWidget(self.extrapolation_combo)
@@ -1731,18 +1735,19 @@ class ECUMapMainWindow(QMainWindow):
                 (f"{warnings} extrapolated", warnings > 0),
             ]
         )
-        self.delta_panel.set_badges([(f"{method} minus Bilinear", False)])
+        self.delta_panel.set_badges([("Result minus Bilinear", False)])
         self.result_panel.subtitle_label.setText(
             f"{method} interpolation • {extrapolation} outside source axes"
         )
         self.tabs.setTabEnabled(1, True)
-        self.tabs.setTabEnabled(2, result.method != "bilinear")
+        has_difference = bool(np.any(~np.isclose(result.delta_vs_bilinear.z, 0.0, atol=1e-12)))
+        self.tabs.setTabEnabled(2, result.method != "bilinear" or has_difference)
         self.tabs.setCurrentIndex(1)
         self.copy_result_button.setEnabled(True)
         self.copy_excel_button.setEnabled(True)
         self.safety_report_button.setEnabled(True)
         self.result_visualize_button.setEnabled(True)
-        self.delta_visualize_button.setEnabled(result.method != "bilinear")
+        self.delta_visualize_button.setEnabled(result.method != "bilinear" or has_difference)
         self._update_history_actions()
         self.statusBar().showMessage(
             f"Generated {result.map_data.columns} × {result.map_data.rows} map; "
@@ -1980,7 +1985,9 @@ class ECUMapMainWindow(QMainWindow):
             self.method_hint.setText(hints[self.method_combo.currentData()])
 
     def _extrapolation_changed(self) -> None:
-        self.limit_row.setVisible(self.extrapolation_combo.currentData() == "linear")
+        self.limit_row.setVisible(
+            self.extrapolation_combo.currentData() in {"linear", "trend", "global_trend"}
+        )
 
     def show_clipboard_guide(self) -> None:
         QMessageBox.information(

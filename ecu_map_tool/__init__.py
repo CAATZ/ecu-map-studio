@@ -11,4 +11,4 @@ __all__ = [
     "resample_map",
 ]
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"

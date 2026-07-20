@@ -209,6 +209,43 @@ class GuiSmokeTests(unittest.TestCase):
         self.assertGreater(window.result.extrapolated_cells, 0)
         window.close()
 
+    def test_least_squares_edge_trend_is_available_for_table_extrapolation(self):
+        window = ECUMapMainWindow()
+        window.load_demo_map()
+        trend_index = window.extrapolation_combo.findData("trend")
+        self.assertGreaterEqual(trend_index, 0)
+        window.extrapolation_combo.setCurrentIndex(trend_index)
+        self.assertFalse(window.limit_row.isHidden())
+        window.x_min_edit.setText("500")
+        window.x_max_edit.setText("8000")
+        window.y_min_edit.setText("0.1")
+        window.y_max_edit.setText("1.5")
+
+        window.generate_result()
+        self.app.processEvents()
+
+        self.assertEqual(window.result.extrapolation, "trend")
+        self.assertGreater(window.result.extrapolated_cells, 0)
+        self.assertTrue(window.tabs.isTabEnabled(2))
+        window.close()
+
+    def test_global_table_trend_is_available_for_table_extrapolation(self):
+        window = ECUMapMainWindow()
+        window.load_demo_map()
+        trend_index = window.extrapolation_combo.findData("global_trend")
+        self.assertGreaterEqual(trend_index, 0)
+        window.extrapolation_combo.setCurrentIndex(trend_index)
+        self.assertFalse(window.limit_row.isHidden())
+        window.x_max_edit.setText("8000")
+
+        window.generate_result()
+        self.app.processEvents()
+
+        self.assertEqual(window.result.extrapolation, "global_trend")
+        self.assertGreater(window.result.extrapolated_cells, 0)
+        self.assertTrue(window.tabs.isTabEnabled(2))
+        window.close()
+
     def test_custom_axes_mode_is_preserved(self):
         window = ECUMapMainWindow()
         window.load_demo_map()
