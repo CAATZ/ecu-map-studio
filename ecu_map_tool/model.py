@@ -301,3 +301,8 @@ def format_number(value: float, precision: int = 8) -> str:
     if value == 0:
         value = 0.0
     return f"{value:.{precision}g}"
+
+
+def format_axis_label(value: float) -> str:
+    """Format a table-axis breakpoint as a coarse whole number."""
+    return str(round(float(value)))

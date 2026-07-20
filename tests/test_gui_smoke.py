@@ -7,6 +7,8 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PyQt5.QtCore import QPoint, QPointF, Qt
+from PyQt5.QtGui import QWheelEvent
 from PyQt5.QtWidgets import QApplication, QDialog, QMessageBox
 
 from ecu_map_tool.app import create_application
@@ -28,6 +30,45 @@ class GuiSmokeTests(unittest.TestCase):
         for window in reversed(cls.live_routing_windows):
             window.close()
         cls.app.processEvents()
+
+    def test_mouse_wheel_does_not_change_combo_box_values(self):
+        window = ECUMapMainWindow()
+        combo = window.method_combo
+        combo.setCurrentIndex(0)
+        event = QWheelEvent(
+            QPointF(5, 5),
+            QPointF(5, 5),
+            QPoint(),
+            QPoint(0, -120),
+            Qt.NoButton,
+            Qt.NoModifier,
+            Qt.NoScrollPhase,
+            False,
+        )
+
+        QApplication.sendEvent(combo, event)
+
+        self.assertEqual(combo.currentIndex(), 0)
+        self.assertFalse(event.isAccepted())
+        window.close()
+
+    def test_loaded_map_sidebar_remains_resizable(self):
+        window = ECUMapMainWindow()
+        window.show()
+        self.app.processEvents()
+        splitter = window.main_splitter
+        self.assertFalse(splitter.opaqueResize())
+        initial = splitter.sizes()[0]
+        self.assertGreaterEqual(initial, 400)
+
+        window.load_demo_map()
+        splitter.setSizes([initial + 60, sum(splitter.sizes()) - initial - 60])
+        self.app.processEvents()
+
+        self.assertGreater(splitter.sizes()[0], initial)
+        sidebar = splitter.widget(0)
+        self.assertEqual(sidebar.widget().width(), sidebar.viewport().width())
+        window.close()
 
     def test_demo_can_generate_and_copy_romraider_result(self):
         window = ECUMapMainWindow()

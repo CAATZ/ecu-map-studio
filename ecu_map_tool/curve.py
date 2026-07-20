@@ -10,8 +10,8 @@ from .model import CurveData, MapValidationError, validate_axis
 
 CURVE_METHOD_LABELS = {
     "linear": "Linear",
-    "pchip": "Shape-preserving PCHIP",
-    "nearest": "Nearest neighbor",
+    "pchip": "PCHIP",
+    "nearest": "Nearest",
 }
 
 

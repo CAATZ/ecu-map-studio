@@ -22,10 +22,10 @@ The application supports:
 - Excel-compatible tab-separated tables.
 - Automatic constant-spacing axes or fully custom breakpoints.
 - Bilinear, shape-preserving PCHIP, and nearest-neighbor interpolation.
-- Held-edge, limited-linear, or disabled extrapolation.
+- Held-edge, limited-linear, local edge-trend, global table-trend, or disabled extrapolation.
 - Heat maps, live X/Y slices, interactive 3D surfaces, and difference views.
-- Deterministic selected-region and whole-table smoothing with previews and warnings.
-- Cell editing, block copy/paste, selection math, comparison/merge, undo/redo, and project files.
+- Deterministic selected-region interpolation and table smoothing with previews and warnings.
+- Direct selected-cell entry, block copy/paste, selection math, comparison/merge, undo/redo, and project files.
 
 ## Screens and analysis tools
 
@@ -110,6 +110,8 @@ Open **2D Curve Tool** from the main window or paste a complete `[Table2D]` payl
 ## Projects and editing
 
 Versioned `.ecumap` project files preserve the loaded source, generated result, extrapolation mask, target axes, numerical settings, and display precision. Source and generated results have separate undo histories.
+
+Select one cell or a range, type a number, and press Enter to set every selected cell in one undoable edit. Source and Result both provide interpolation, smoothing, math, comparison, axis editing, visualization, and export actions.
 
 Use **Clear table / New session** or `Ctrl+N` to reset a map workspace. The 2D curve window provides the equivalent command. Resetting a session does not modify RomRaider or the system clipboard.
 

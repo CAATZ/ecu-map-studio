@@ -15,16 +15,16 @@ from .model import (
 
 METHOD_LABELS = {
     "bilinear": "Bilinear",
-    "pchip": "Shape-preserving PCHIP",
-    "nearest": "Nearest neighbor",
+    "pchip": "PCHIP",
+    "nearest": "Nearest",
 }
 
 EXTRAPOLATION_LABELS = {
-    "hold": "Hold edge values",
-    "linear": "Limited linear",
-    "trend": "Local edge trend",
-    "global_trend": "Global table trend",
-    "disallow": "Do not extrapolate",
+    "hold": "Hold",
+    "linear": "Linear",
+    "trend": "Local trend",
+    "global_trend": "Global trend",
+    "disallow": "Disabled",
 }
 
 

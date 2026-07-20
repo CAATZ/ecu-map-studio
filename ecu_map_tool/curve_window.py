@@ -8,7 +8,6 @@ from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -25,6 +24,7 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -67,7 +67,7 @@ from .project import (
     load_project,
     save_project,
 )
-from .widgets import ReadableTabWidget, card_frame, section_header
+from .widgets import ReadableTabWidget, WheelSafeComboBox, card_frame, section_header
 
 
 def _curves_equal(left: CurveData, right: CurveData) -> bool:
@@ -95,7 +95,7 @@ class CurveDataDialog(QDialog):
         layout.addWidget(intro)
 
         layout.addWidget(QLabel("X axis"))
-        self.x_edit = QPlainTextEdit(axis_to_text(curve.x) if curve is not None else "0, 1")
+        self.x_edit = QPlainTextEdit(axis_to_text(curve.x, 6) if curve is not None else "0, 1")
         self.x_edit.setMaximumHeight(86)
         layout.addWidget(self.x_edit)
         layout.addWidget(QLabel("Values"))
@@ -197,15 +197,15 @@ class CurveSelectionMathDialog(QDialog):
         note.setWordWrap(True)
         layout.addWidget(note)
         form = QFormLayout()
-        self.operation = QComboBox()
+        self.operation = WheelSafeComboBox()
         for key, label in MATH_OPERATIONS.items():
             self.operation.addItem(label, key)
         self.value = QDoubleSpinBox()
         self.value.setRange(-1e12, 1e12)
-        self.value.setDecimals(8)
+        self.value.setDecimals(4)
         self.second_value = QDoubleSpinBox()
         self.second_value.setRange(-1e12, 1e12)
-        self.second_value.setDecimals(8)
+        self.second_value.setDecimals(4)
         self.second_value.setValue(100.0)
         self.second_label = QLabel("Maximum")
         form.addRow("Operation", self.operation)
@@ -217,7 +217,7 @@ class CurveSelectionMathDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
         buttons.button(QDialogButtonBox.Apply).setText("Apply to selection")
         buttons.button(QDialogButtonBox.Apply).setObjectName("PrimaryButton")
-        buttons.accepted.connect(self.accept)
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
@@ -254,14 +254,15 @@ class CurveWindow(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self._top_bar())
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self._sidebar())
-        splitter.addWidget(self._workspace())
-        splitter.setSizes([370, 910])
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setOpaqueResize(False)
+        self.main_splitter.addWidget(self._sidebar())
+        self.main_splitter.addWidget(self._workspace())
+        self.main_splitter.setSizes([400, 880])
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self.main_splitter, 1)
 
     def _top_bar(self) -> QWidget:
         bar = QFrame()
@@ -295,10 +296,11 @@ class CurveWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(345)
-        scroll.setMaximumWidth(450)
+        scroll.setMinimumWidth(380)
+        scroll.setMaximumWidth(560)
         body = QWidget()
         body.setObjectName("SidebarBody")
+        body.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         layout = QVBoxLayout(body)
         layout.setContentsMargins(14, 14, 14, 18)
         layout.setSpacing(12)
@@ -416,16 +418,16 @@ class CurveWindow(QMainWindow):
         card, layout = card_frame()
         layout.addLayout(section_header(3, "Resampling"))
         layout.addWidget(QLabel("Interpolation method"))
-        self.method_combo = QComboBox()
-        self.method_combo.addItem("Linear — predictable default", "linear")
-        self.method_combo.addItem("PCHIP — smooth and shape-preserving", "pchip")
-        self.method_combo.addItem("Nearest — switches and levels", "nearest")
+        self.method_combo = WheelSafeComboBox()
+        self.method_combo.addItem("Linear", "linear")
+        self.method_combo.addItem("PCHIP", "pchip")
+        self.method_combo.addItem("Nearest", "nearest")
         layout.addWidget(self.method_combo)
         layout.addWidget(QLabel("Outside the source axis"))
-        self.extrapolation_combo = QComboBox()
-        self.extrapolation_combo.addItem("Hold edge values — recommended", "hold")
-        self.extrapolation_combo.addItem("Limited linear edge slope", "linear")
-        self.extrapolation_combo.addItem("Do not extrapolate", "disallow")
+        self.extrapolation_combo = WheelSafeComboBox()
+        self.extrapolation_combo.addItem("Hold", "hold")
+        self.extrapolation_combo.addItem("Linear", "linear")
+        self.extrapolation_combo.addItem("Disabled", "disallow")
         self.extrapolation_combo.currentIndexChanged.connect(self._extrapolation_changed)
         layout.addWidget(self.extrapolation_combo)
         self.limit_row = QWidget()
@@ -456,6 +458,7 @@ class CurveWindow(QMainWindow):
 
     def _workspace(self) -> QWidget:
         container = QWidget()
+        container.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(10, 12, 16, 12)
         layout.setSpacing(0)
@@ -470,7 +473,7 @@ class CurveWindow(QMainWindow):
             "Difference vs linear", "Blue is lower; red is higher than linear interpolation."
         )
 
-        self.smoothing_button = QPushButton("Smoothing")
+        self.smoothing_button = QPushButton("Smooth")
         self.smoothing_button.setObjectName("GhostButton")
         self.smoothing_button.setEnabled(False)
         smoothing_menu = QMenu(self.smoothing_button)
@@ -482,26 +485,30 @@ class CurveWindow(QMainWindow):
         self.undo_action.setEnabled(False)
         self.smoothing_button.setMenu(smoothing_menu)
         self.source_panel.add_action(self.smoothing_button)
-        self.math_button = QPushButton("Selection math")
+        self.math_button = QPushButton("Math")
         self.math_button.setObjectName("GhostButton")
+        self.math_button.setToolTip("Apply math to selected curve points")
         self.math_button.setEnabled(False)
         self.math_button.clicked.connect(self.open_selection_math)
         self.source_panel.add_action(self.math_button)
-        edit_button = QPushButton("Edit source data")
+        edit_button = QPushButton("Edit")
         edit_button.setObjectName("GhostButton")
+        edit_button.setToolTip("Edit the source axis and values")
         edit_button.clicked.connect(self.edit_source_data)
         self.source_panel.add_action(edit_button)
-        self.copy_source_button = QPushButton("Copy source")
+        self.copy_source_button = QPushButton("Copy")
         self.copy_source_button.setObjectName("GhostButton")
+        self.copy_source_button.setToolTip("Copy the source curve for RomRaider")
         self.copy_source_button.setEnabled(False)
         self.copy_source_button.clicked.connect(self.copy_source)
         self.source_panel.add_action(self.copy_source_button)
 
-        self.copy_tsv_button = QPushButton("Copy TSV")
+        self.copy_tsv_button = QPushButton("TSV")
+        self.copy_tsv_button.setToolTip("Copy the result as tab-separated values")
         self.copy_tsv_button.setEnabled(False)
         self.copy_tsv_button.clicked.connect(self.copy_result_tsv)
         self.result_panel.add_action(self.copy_tsv_button)
-        self.copy_result_button = QPushButton("Copy to RR")
+        self.copy_result_button = QPushButton("Copy RR")
         self.copy_result_button.setObjectName("PrimaryButton")
         self.copy_result_button.setToolTip("Copy the complete curve for RomRaider")
         self.copy_result_button.setEnabled(False)
@@ -736,7 +743,7 @@ class CurveWindow(QMainWindow):
     def use_source_axis(self) -> None:
         if self.source_data is None:
             return
-        self.target_x_edit.setPlainText(axis_to_text(self.source_data.x))
+        self.target_x_edit.setPlainText(axis_to_text(self.source_data.x, 6))
         self.point_count.setValue(self.source_data.size)
         self.reset_auto_range()
 
@@ -776,7 +783,7 @@ class CurveWindow(QMainWindow):
     def _selected_target_axis(self) -> np.ndarray:
         if self.target_mode_tabs.currentIndex() == 0:
             axis = self._automatic_axis()
-            self.target_x_edit.setPlainText(axis_to_text(axis))
+            self.target_x_edit.setPlainText(axis_to_text(axis, 6))
             return axis
         return parse_axis_text(self.target_x_edit.toPlainText(), "Target X")
 

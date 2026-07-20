@@ -75,6 +75,49 @@ def apply_map_math(
     )
 
 
+def interpolate_map_selection(source: MapData, mask: np.ndarray) -> MapData:
+    """Interpolate a contiguous row, column, or rectangle from its endpoints."""
+    selected = np.asarray(mask, dtype=bool)
+    if selected.shape != source.z.shape:
+        raise MapValidationError("The selection does not match the table.")
+    rows = np.flatnonzero(np.any(selected, axis=1))
+    columns = np.flatnonzero(np.any(selected, axis=0))
+    rectangular = bool(
+        rows.size
+        and columns.size
+        and np.all(np.diff(rows) == 1)
+        and np.all(np.diff(columns) == 1)
+        and np.all(selected[np.ix_(rows, columns)])
+        and int(np.count_nonzero(selected)) == rows.size * columns.size
+    )
+    if not rectangular or (rows.size < 2 and columns.size < 2):
+        raise MapValidationError(
+            "Select one contiguous row, column, or rectangle with at least two endpoints."
+        )
+
+    x = source.x[columns]
+    y = source.y[rows]
+    if (columns.size > 1 and x[-1] == x[0]) or (rows.size > 1 and y[-1] == y[0]):
+        raise MapValidationError("The selected endpoints must use distinct axis values.")
+    tx = np.zeros(columns.size) if columns.size == 1 else (x - x[0]) / (x[-1] - x[0])
+    ty = np.zeros(rows.size) if rows.size == 1 else (y - y[0]) / (y[-1] - y[0])
+    output = source.z.copy()
+
+    if rows.size == 1:
+        first, last = output[rows[0], columns[[0, -1]]]
+        output[rows[0], columns] = first + (last - first) * tx
+    elif columns.size == 1:
+        first, last = output[rows[[0, -1]], columns[0]]
+        output[rows, columns[0]] = first + (last - first) * ty
+    else:
+        top_left, top_right = output[rows[0], columns[[0, -1]]]
+        bottom_left, bottom_right = output[rows[-1], columns[[0, -1]]]
+        top = top_left + (top_right - top_left) * tx
+        bottom = bottom_left + (bottom_right - bottom_left) * tx
+        output[np.ix_(rows, columns)] = top + (bottom - top) * ty[:, None]
+    return MapData(source.x, source.y, output, name=source.name)
+
+
 def apply_curve_math(
     source: CurveData,
     mask: np.ndarray,

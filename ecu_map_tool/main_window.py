@@ -8,7 +8,6 @@ from PyQt5.QtGui import QKeySequence
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
-    QComboBox,
     QDialog,
     QDialogButtonBox,
     QDoubleSpinBox,
@@ -25,6 +24,7 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QSplitter,
     QTabWidget,
@@ -50,6 +50,7 @@ from .features import (
     apply_map_math,
     build_safety_report,
     compare_maps,
+    interpolate_map_selection,
     merge_comparison,
 )
 from .history import UndoHistory
@@ -73,7 +74,7 @@ from .project import (
     map_to_dict,
     save_project,
 )
-from .widgets import MapPanel, ReadableTabWidget, card_frame, section_header
+from .widgets import MapPanel, ReadableTabWidget, WheelSafeComboBox, card_frame, section_header
 
 
 def _maps_equal(left: MapData, right: MapData) -> bool:
@@ -104,12 +105,12 @@ class AxisDialog(QDialog):
         layout.addWidget(intro)
 
         layout.addWidget(QLabel("X axis — columns"))
-        self.x_edit = QPlainTextEdit(axis_to_text(x) if x is not None else "0, 1")
+        self.x_edit = QPlainTextEdit(axis_to_text(x, 6) if x is not None else "0, 1")
         self.x_edit.setMaximumHeight(82)
         layout.addWidget(self.x_edit)
 
         layout.addWidget(QLabel("Y axis — rows"))
-        self.y_edit = QPlainTextEdit(axis_to_text(y) if y is not None else "0, 1")
+        self.y_edit = QPlainTextEdit(axis_to_text(y, 6) if y is not None else "0, 1")
         self.y_edit.setMaximumHeight(82)
         layout.addWidget(self.y_edit)
 
@@ -188,29 +189,29 @@ class SmoothingPreviewDialog(QDialog):
 
 
 class SelectionMathDialog(QDialog):
-    def __init__(self, selected_count: int, parent=None) -> None:
+    def __init__(self, selected_count: int, target: str = "source", parent=None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Selection math")
         self.setMinimumWidth(430)
         layout = QVBoxLayout(self)
         note = QLabel(
-            f"Apply one deterministic operation to {selected_count} selected source cells. "
+            f"Apply one deterministic operation to {selected_count} selected {target} cells. "
             "The change can be undone with Ctrl+Z."
         )
         note.setWordWrap(True)
         note.setObjectName("Muted")
         layout.addWidget(note)
         form = QFormLayout()
-        self.operation = QComboBox()
+        self.operation = WheelSafeComboBox()
         for key, label in MATH_OPERATIONS.items():
             self.operation.addItem(label, key)
         self.value = QDoubleSpinBox()
         self.value.setRange(-1e12, 1e12)
-        self.value.setDecimals(8)
+        self.value.setDecimals(4)
         self.value.setValue(0.0)
         self.second_value = QDoubleSpinBox()
         self.second_value.setRange(-1e12, 1e12)
-        self.second_value.setDecimals(8)
+        self.second_value.setDecimals(4)
         self.second_value.setValue(100.0)
         self.second_label = QLabel("Maximum")
         form.addRow("Operation", self.operation)
@@ -222,7 +223,7 @@ class SelectionMathDialog(QDialog):
         buttons = QDialogButtonBox(QDialogButtonBox.Cancel | QDialogButtonBox.Apply)
         buttons.button(QDialogButtonBox.Apply).setText("Apply to selection")
         buttons.button(QDialogButtonBox.Apply).setObjectName("PrimaryButton")
-        buttons.accepted.connect(self.accept)
+        buttons.button(QDialogButtonBox.Apply).clicked.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
@@ -365,14 +366,15 @@ class ECUMapMainWindow(QMainWindow):
         layout.setSpacing(0)
         layout.addWidget(self._top_bar())
 
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.setChildrenCollapsible(False)
-        splitter.addWidget(self._sidebar())
-        splitter.addWidget(self._workspace())
-        splitter.setSizes([380, 1040])
-        splitter.setStretchFactor(0, 0)
-        splitter.setStretchFactor(1, 1)
-        layout.addWidget(splitter, 1)
+        self.main_splitter = QSplitter(Qt.Horizontal)
+        self.main_splitter.setChildrenCollapsible(False)
+        self.main_splitter.setOpaqueResize(False)
+        self.main_splitter.addWidget(self._sidebar())
+        self.main_splitter.addWidget(self._workspace())
+        self.main_splitter.setSizes([410, 1010])
+        self.main_splitter.setStretchFactor(0, 0)
+        self.main_splitter.setStretchFactor(1, 1)
+        layout.addWidget(self.main_splitter, 1)
 
     def _top_bar(self) -> QWidget:
         bar = QFrame()
@@ -416,11 +418,12 @@ class ECUMapMainWindow(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setMinimumWidth(350)
-        scroll.setMaximumWidth(470)
+        scroll.setMinimumWidth(390)
+        scroll.setMaximumWidth(600)
 
         body = QWidget()
         body.setObjectName("SidebarBody")
+        body.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         layout = QVBoxLayout(body)
         layout.setContentsMargins(14, 14, 14, 18)
         layout.setSpacing(12)
@@ -610,10 +613,10 @@ class ECUMapMainWindow(QMainWindow):
         layout.addLayout(section_header(3, "Resampling"))
 
         layout.addWidget(QLabel("Interpolation method"))
-        self.method_combo = QComboBox()
-        self.method_combo.addItem("Bilinear — predictable default", "bilinear")
-        self.method_combo.addItem("PCHIP — smooth and shape-preserving", "pchip")
-        self.method_combo.addItem("Nearest — switches and categorical maps", "nearest")
+        self.method_combo = WheelSafeComboBox()
+        self.method_combo.addItem("Bilinear", "bilinear")
+        self.method_combo.addItem("PCHIP", "pchip")
+        self.method_combo.addItem("Nearest", "nearest")
         self.method_combo.currentIndexChanged.connect(self._method_changed)
         layout.addWidget(self.method_combo)
 
@@ -624,14 +627,12 @@ class ECUMapMainWindow(QMainWindow):
         self._method_changed()
 
         layout.addWidget(QLabel("Outside the source axes"))
-        self.extrapolation_combo = QComboBox()
-        self.extrapolation_combo.addItem("Hold edge values — recommended", "hold")
-        self.extrapolation_combo.addItem("Limited linear edge slope", "linear")
-        self.extrapolation_combo.addItem("Local edge trend — 4 × 4 least-squares fit", "trend")
-        self.extrapolation_combo.addItem(
-            "Global table trend — whole-table least-squares fit", "global_trend"
-        )
-        self.extrapolation_combo.addItem("Do not extrapolate", "disallow")
+        self.extrapolation_combo = WheelSafeComboBox()
+        self.extrapolation_combo.addItem("Hold", "hold")
+        self.extrapolation_combo.addItem("Linear", "linear")
+        self.extrapolation_combo.addItem("Local trend (4 × 4)", "trend")
+        self.extrapolation_combo.addItem("Global trend", "global_trend")
+        self.extrapolation_combo.addItem("Disabled", "disallow")
         self.extrapolation_combo.currentIndexChanged.connect(self._extrapolation_changed)
         layout.addWidget(self.extrapolation_combo)
 
@@ -666,6 +667,7 @@ class ECUMapMainWindow(QMainWindow):
 
     def _workspace(self) -> QWidget:
         container = QWidget()
+        container.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Expanding)
         layout = QVBoxLayout(container)
         layout.setContentsMargins(10, 12, 16, 12)
         layout.setSpacing(0)
@@ -687,12 +689,14 @@ class ECUMapMainWindow(QMainWindow):
         self.source_visualize_button.setEnabled(False)
         self.source_panel.add_action(self.source_visualize_button)
 
-        self.smoothing_button = QPushButton("Smoothing")
+        self.smoothing_button = QPushButton("Smooth")
         self.smoothing_button.setObjectName("GhostButton")
         self.smoothing_button.setEnabled(False)
         smoothing_menu = QMenu(self.smoothing_button)
         detect_action = smoothing_menu.addAction("Detect suspicious cells")
         detect_action.triggered.connect(self.detect_source_anomalies)
+        interpolate_action = smoothing_menu.addAction("Interpolate selected region")
+        interpolate_action.triggered.connect(self.interpolate_source_selection)
         repair_action = smoothing_menu.addAction("Repair selected cells…")
         repair_action.triggered.connect(self.repair_source_selection)
         whole_table_action = smoothing_menu.addAction("Smooth entire table…")
@@ -704,52 +708,106 @@ class ECUMapMainWindow(QMainWindow):
         self.smoothing_button.setMenu(smoothing_menu)
         self.source_panel.add_action(self.smoothing_button)
 
-        self.math_button = QPushButton("Selection math")
+        self.math_button = QPushButton("Math")
         self.math_button.setObjectName("GhostButton")
+        self.math_button.setToolTip("Apply math to selected source cells")
         self.math_button.setEnabled(False)
-        self.math_button.clicked.connect(self.open_selection_math)
+        self.math_button.clicked.connect(lambda _checked=False: self.open_selection_math("source"))
         self.source_panel.add_action(self.math_button)
 
-        self.compare_button = QPushButton("Compare clipboard")
+        self.compare_button = QPushButton("Compare")
         self.compare_button.setObjectName("GhostButton")
         self.compare_button.setEnabled(False)
         self.compare_button.setToolTip("Compare with a full map currently on the clipboard.")
-        self.compare_button.clicked.connect(self.compare_clipboard_map)
+        self.compare_button.clicked.connect(
+            lambda _checked=False: self.compare_clipboard_map("source")
+        )
         self.source_panel.add_action(self.compare_button)
 
-        edit_axes_button = QPushButton("Edit axes")
+        edit_axes_button = QPushButton("Axes")
         edit_axes_button.setObjectName("GhostButton")
+        edit_axes_button.setToolTip("Edit the source X and Y axes")
         edit_axes_button.clicked.connect(self.edit_source_axes)
         self.source_panel.add_action(edit_axes_button)
 
-        self.copy_source_button = QPushButton("Copy source")
+        self.copy_source_button = QPushButton("Copy")
         self.copy_source_button.setObjectName("GhostButton")
+        self.copy_source_button.setToolTip("Copy the source map for RomRaider")
         self.copy_source_button.setEnabled(False)
         self.copy_source_button.clicked.connect(self.copy_source_romraider)
         self.source_panel.add_action(self.copy_source_button)
 
-        self.copy_excel_button = QPushButton("Copy TSV")
+        self.result_visualize_button = self._visualize_button("result")
+        self.result_visualize_button.setEnabled(False)
+        self.result_panel.add_action(self.result_visualize_button)
+
+        self.result_smoothing_button = QPushButton("Smooth")
+        self.result_smoothing_button.setObjectName("GhostButton")
+        self.result_smoothing_button.setEnabled(False)
+        result_smoothing_menu = QMenu(self.result_smoothing_button)
+        result_detect_action = result_smoothing_menu.addAction("Detect suspicious cells")
+        result_detect_action.triggered.connect(self.detect_result_anomalies)
+        result_interpolate_action = result_smoothing_menu.addAction("Interpolate selected region")
+        result_interpolate_action.triggered.connect(self.interpolate_result_selection)
+        result_repair_action = result_smoothing_menu.addAction("Repair selected cells…")
+        result_repair_action.triggered.connect(self.repair_result_selection)
+        result_whole_action = result_smoothing_menu.addAction("Smooth entire table…")
+        result_whole_action.triggered.connect(self.smooth_result_table)
+        result_smoothing_menu.addSeparator()
+        self.undo_result_smoothing_action = result_smoothing_menu.addAction(
+            "Undo last result change"
+        )
+        self.undo_result_smoothing_action.setEnabled(False)
+        self.undo_result_smoothing_action.triggered.connect(self.undo_result)
+        self.result_smoothing_button.setMenu(result_smoothing_menu)
+        self.result_panel.add_action(self.result_smoothing_button)
+
+        self.result_math_button = QPushButton("Math")
+        self.result_math_button.setObjectName("GhostButton")
+        self.result_math_button.setToolTip("Apply math to selected result cells")
+        self.result_math_button.setEnabled(False)
+        self.result_math_button.clicked.connect(
+            lambda _checked=False: self.open_selection_math("result")
+        )
+        self.result_panel.add_action(self.result_math_button)
+
+        self.result_compare_button = QPushButton("Compare")
+        self.result_compare_button.setObjectName("GhostButton")
+        self.result_compare_button.setToolTip(
+            "Compare the result with a full map currently on the clipboard."
+        )
+        self.result_compare_button.setEnabled(False)
+        self.result_compare_button.clicked.connect(
+            lambda _checked=False: self.compare_clipboard_map("result")
+        )
+        self.result_panel.add_action(self.result_compare_button)
+
+        self.result_axes_button = QPushButton("Axes")
+        self.result_axes_button.setObjectName("GhostButton")
+        self.result_axes_button.setToolTip("Edit the result X and Y axes")
+        self.result_axes_button.setEnabled(False)
+        self.result_axes_button.clicked.connect(self.edit_result_axes)
+        self.result_panel.add_action(self.result_axes_button)
+
+        self.copy_excel_button = QPushButton("TSV")
+        self.copy_excel_button.setToolTip("Copy the result as tab-separated values")
         self.copy_excel_button.setEnabled(False)
         self.copy_excel_button.clicked.connect(self.copy_result_excel)
         self.result_panel.add_action(self.copy_excel_button)
 
-        self.copy_result_button = QPushButton("Copy to RR")
+        self.copy_result_button = QPushButton("Copy RR")
         self.copy_result_button.setObjectName("PrimaryButton")
         self.copy_result_button.setToolTip("Copy the complete result for RomRaider")
         self.copy_result_button.setEnabled(False)
         self.copy_result_button.clicked.connect(self.copy_result_romraider)
         self.result_panel.add_action(self.copy_result_button)
 
-        self.safety_report_button = QPushButton("Safety report")
+        self.safety_report_button = QPushButton("Safety")
         self.safety_report_button.setObjectName("GhostButton")
         self.safety_report_button.setToolTip("Open the pre-export numerical safety report")
         self.safety_report_button.setEnabled(False)
         self.safety_report_button.clicked.connect(self.show_safety_report)
         self.result_panel.add_action(self.safety_report_button)
-
-        self.result_visualize_button = self._visualize_button("result")
-        self.result_visualize_button.setEnabled(False)
-        self.result_panel.add_action(self.result_visualize_button)
 
         self.delta_visualize_button = self._visualize_button("difference")
         self.delta_visualize_button.setEnabled(False)
@@ -778,7 +836,7 @@ class ECUMapMainWindow(QMainWindow):
         return container
 
     def _visualize_button(self, kind: str) -> QPushButton:
-        button = QPushButton("Visualize")
+        button = QPushButton("View")
         button.setObjectName("GhostButton")
         button.setToolTip("Open slice plots or an interactive 3D surface")
         menu = QMenu(button)
@@ -792,6 +850,15 @@ class ECUMapMainWindow(QMainWindow):
         )
         button.setMenu(menu)
         return button
+
+    def _set_result_table_actions_enabled(self, enabled: bool) -> None:
+        for button in (
+            self.result_smoothing_button,
+            self.result_math_button,
+            self.result_compare_button,
+            self.result_axes_button,
+        ):
+            button.setEnabled(enabled)
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("File")
@@ -846,12 +913,12 @@ class ECUMapMainWindow(QMainWindow):
         edit_menu.addAction(self.redo_action)
         edit_menu.addSeparator()
         math_action = QAction("Selection math…", self)
-        math_action.triggered.connect(self.open_selection_math)
+        math_action.triggered.connect(lambda _checked=False: self.open_selection_math())
         edit_menu.addAction(math_action)
 
         tools_menu = self.menuBar().addMenu("Tools")
         compare_action = QAction("Compare clipboard map…", self)
-        compare_action.triggered.connect(self.compare_clipboard_map)
+        compare_action.triggered.connect(lambda _checked=False: self.compare_clipboard_map())
         tools_menu.addAction(compare_action)
         report_action = QAction("Pre-export safety report…", self)
         report_action.triggered.connect(self.show_safety_report)
@@ -1007,6 +1074,7 @@ class ECUMapMainWindow(QMainWindow):
         self.copy_excel_button.setEnabled(False)
         self.safety_report_button.setEnabled(False)
         self.result_visualize_button.setEnabled(False)
+        self._set_result_table_actions_enabled(False)
         self.delta_visualize_button.setEnabled(False)
         self.clear_session_button.setEnabled(False)
         self.generate_button.setEnabled(False)
@@ -1122,6 +1190,57 @@ class ECUMapMainWindow(QMainWindow):
         )
         self.set_source_map(data)
 
+    def _map_target(self, target: str | None = None) -> tuple[str, MapPanel, MapData]:
+        if target is None:
+            target = "result" if self.tabs.currentIndex() == 1 else "source"
+        if target == "source":
+            if self.source_data is None:
+                raise MapValidationError("Load a source map first.")
+            return target, self.source_panel, self.source_panel.table.current_map()
+        if target == "result" and self.result is not None and not self.result_stale:
+            return target, self.result_panel, self.result_panel.table.current_map()
+        raise MapValidationError("Generate an up-to-date result first.")
+
+    @staticmethod
+    def _selection_mask(panel: MapPanel, map_data: MapData) -> np.ndarray:
+        mask = np.zeros_like(map_data.z, dtype=bool)
+        for index in panel.table.selectedIndexes():
+            mask[index.row(), index.column()] = True
+        return mask
+
+    def _commit_map_change(self, target: str, proposed: MapData) -> None:
+        if target == "source":
+            self.set_source_map(proposed, reset_target=False)
+            return
+        self.result_history.record(proposed)
+        self._set_edited_result(proposed, refresh_table=True)
+        self._update_history_actions()
+
+    def interpolate_source_selection(self) -> None:
+        self.interpolate_selection("source")
+
+    def interpolate_result_selection(self) -> None:
+        self.interpolate_selection("result")
+
+    def interpolate_selection(self, target: str | None = None) -> None:
+        try:
+            target, panel, current = self._map_target(target)
+            mask = self._selection_mask(panel, current)
+            proposed = interpolate_map_selection(current, mask)
+        except MapValidationError as exc:
+            self._error(str(exc), "Cannot interpolate selection")
+            return
+        changed = int(np.count_nonzero(~np.isclose(current.z, proposed.z, atol=1e-12)))
+        if not changed:
+            self.statusBar().showMessage("The selected region is already interpolated.", 5000)
+            return
+        self._commit_map_change(target, proposed)
+        self.statusBar().showMessage(
+            f"Interpolated {changed} {target} cells from the selected endpoints. "
+            "Ctrl+Z restores the previous values.",
+            7000,
+        )
+
     def edit_source_axes(self) -> None:
         if self.source_data is None:
             self.new_blank_map()
@@ -1147,20 +1266,67 @@ class ECUMapMainWindow(QMainWindow):
             reset_target=False,
         )
 
-    def detect_source_anomalies(self) -> None:
+    def edit_result_axes(self) -> None:
         try:
-            source = self.source_panel.table.current_map()
-            result = detect_anomalies(source)
+            _target, _panel, current = self._map_target("result")
         except MapValidationError as exc:
-            self._error(str(exc), "Cannot inspect source map")
+            self._error(str(exc), "Cannot edit axes")
             return
-        self.source_panel.table.clearSelection()
+        dialog = AxisDialog(current.x, current.y, "Edit result axes", self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        assert dialog.x_values is not None and dialog.y_values is not None
+        if dialog.x_values.size != current.columns or dialog.y_values.size != current.rows:
+            self._error(
+                "Edited axes must keep the current number of columns and rows.",
+                "Axis dimensions changed",
+            )
+            return
+        proposed = MapData(dialog.x_values, dialog.y_values, current.z, name=current.name)
+        try:
+            assert self.result is not None
+            reference_result = resample_map(
+                self.source_panel.table.current_map(),
+                proposed.x,
+                proposed.y,
+                method=self.result.method,
+                extrapolation=self.result.extrapolation,
+                maximum_edge_intervals=self.edge_limit.value(),
+            )
+        except (MapValidationError, ValueError, AssertionError) as exc:
+            self._error(
+                str(exc) or "The result axes could not be recalculated.", "Cannot edit axes"
+            )
+            return
+        self.result_history.record(proposed)
+        self._set_edited_result(
+            proposed,
+            refresh_table=True,
+            reference_result=reference_result,
+        )
+        self._update_history_actions()
+        self.statusBar().showMessage("Result axes updated. Ctrl+Z restores them.", 6000)
+
+    def detect_source_anomalies(self) -> None:
+        self._detect_map_anomalies("source")
+
+    def detect_result_anomalies(self) -> None:
+        self._detect_map_anomalies("result")
+
+    def _detect_map_anomalies(self, target: str) -> None:
+        try:
+            target, panel, current = self._map_target(target)
+            result = detect_anomalies(current)
+        except MapValidationError as exc:
+            self._error(str(exc), f"Cannot inspect {target} map")
+            return
+        panel.table.clearSelection()
         for row, column in np.argwhere(result.mask):
-            self.source_panel.table.item(int(row), int(column)).setSelected(True)
-        self.tabs.setCurrentIndex(0)
-        self.source_panel.set_badges(
+            panel.table.item(int(row), int(column)).setSelected(True)
+        self.tabs.setCurrentIndex(0 if target == "source" else 1)
+        panel.set_badges(
             [
-                (f"{source.columns} × {source.rows}", False),
+                (f"{current.columns}×{current.rows}", False),
                 (f"{result.count} suspicious", result.count > 0),
             ]
         )
@@ -1177,22 +1343,26 @@ class ECUMapMainWindow(QMainWindow):
             )
 
     def repair_source_selection(self) -> None:
+        self._repair_map_selection("source")
+
+    def repair_result_selection(self) -> None:
+        self._repair_map_selection("result")
+
+    def _repair_map_selection(self, target: str) -> None:
         try:
-            source = self.source_panel.table.current_map()
+            target, panel, current = self._map_target(target)
         except MapValidationError as exc:
             self._error(str(exc), "Cannot smooth selection")
             return
 
-        indexes = self.source_panel.table.selectedIndexes()
+        indexes = panel.table.selectedIndexes()
         if not indexes:
             self._error(
-                "Select the source cells that should be reconstructed first.",
+                f"Select the {target} cells that should be reconstructed first.",
                 "No cells selected",
             )
             return
-        mask = np.zeros_like(source.z, dtype=bool)
-        for index in indexes:
-            mask[index.row(), index.column()] = True
+        mask = self._selection_mask(panel, current)
 
         touches_edge = (
             np.any(mask[0, :]) or np.any(mask[-1, :]) or np.any(mask[:, 0]) or np.any(mask[:, -1])
@@ -1210,23 +1380,30 @@ class ECUMapMainWindow(QMainWindow):
                 return
 
         try:
-            proposed = repair_selected_region(source, mask)
+            proposed = repair_selected_region(current, mask)
         except MapValidationError as exc:
             self._error(str(exc), "Cannot repair selection")
             return
         self._preview_smoothing(
-            source,
+            current,
             proposed,
             "Only the selected cells will change. Surrounding cells remain fixed and "
             "define the reconstructed surface.",
             "Selected-region repair",
+            target,
         )
 
     def smooth_source_table(self) -> None:
+        self._smooth_map_table("source")
+
+    def smooth_result_table(self) -> None:
+        self._smooth_map_table("result")
+
+    def _smooth_map_table(self, target: str) -> None:
         try:
-            source = self.source_panel.table.current_map()
+            target, _panel, current = self._map_target(target)
         except MapValidationError as exc:
-            self._error(str(exc), "Cannot smooth source table")
+            self._error(str(exc), f"Cannot smooth {target} table")
             return
 
         answer = QMessageBox.warning(
@@ -1242,16 +1419,17 @@ class ECUMapMainWindow(QMainWindow):
             return
 
         try:
-            proposed = smooth_entire_table(source)
+            proposed = smooth_entire_table(current)
         except MapValidationError as exc:
-            self._error(str(exc), "Cannot smooth source table")
+            self._error(str(exc), f"Cannot smooth {target} table")
             return
         self._preview_smoothing(
-            source,
+            current,
             proposed,
             "WARNING: this proposal applies one axis-aware local-surface smoothing pass "
             "to the entire table. Review every change and validate the resulting calibration.",
             "Whole-table smoothing",
+            target,
         )
 
     def _preview_smoothing(
@@ -1260,6 +1438,7 @@ class ECUMapMainWindow(QMainWindow):
         proposed: MapData,
         warning: str,
         operation_name: str,
+        target: str = "source",
     ) -> None:
         preview = SmoothingPreviewDialog(
             source,
@@ -1272,13 +1451,10 @@ class ECUMapMainWindow(QMainWindow):
             self.statusBar().showMessage("Smoothing preview cancelled; no values changed.", 5000)
             return
 
-        self.set_source_map(proposed, reset_target=False)
+        self._commit_map_change(target, proposed)
         changed = int(np.count_nonzero(~np.isclose(proposed.z, source.z, atol=1e-12)))
-        self.source_panel.set_badges(
-            [(f"{proposed.columns} × {proposed.rows}", False), (f"{changed} changed", True)]
-        )
         self.statusBar().showMessage(
-            f"{operation_name} applied to {changed} cells. Undo is available with Ctrl+Z.",
+            f"{operation_name} applied to {changed} {target} cells. Undo is available with Ctrl+Z.",
             8000,
         )
 
@@ -1304,6 +1480,8 @@ class ECUMapMainWindow(QMainWindow):
         if hasattr(self, "undo_smoothing_action"):
             self.undo_smoothing_action.setText("Undo last source change")
             self.undo_smoothing_action.setEnabled(self.history.can_undo)
+        if hasattr(self, "undo_result_smoothing_action"):
+            self.undo_result_smoothing_action.setEnabled(self.result_history.can_undo)
 
     def undo_active(self) -> None:
         if self._result_history_active():
@@ -1349,64 +1527,64 @@ class ECUMapMainWindow(QMainWindow):
         self._update_history_actions()
         self.statusBar().showMessage("Generated-result change redone.", 5000)
 
-    def open_selection_math(self) -> None:
-        if self.source_data is None:
-            self._error("Load a source map first.", "No source map")
+    def open_selection_math(self, target: str | None = None) -> None:
+        try:
+            target, panel, _current = self._map_target(target)
+        except MapValidationError as exc:
+            self._error(str(exc), "No map available")
             return
-        indexes = self.source_panel.table.selectedIndexes()
+        indexes = panel.table.selectedIndexes()
         if not indexes:
-            self._error("Select one or more source cells first.", "No cells selected")
+            self._error(f"Select one or more {target} cells first.", "No cells selected")
             return
-        dialog = SelectionMathDialog(len(indexes), self)
+        dialog = SelectionMathDialog(len(indexes), target, self)
         if dialog.exec_() != QDialog.Accepted:
             return
         self.apply_selection_math(
             dialog.operation.currentData(),
             dialog.value.value(),
             dialog.second_value.value() if dialog.operation.currentData() == "clamp" else None,
+            target=target,
         )
 
     def apply_selection_math(
-        self, operation: str, value: float, second_value: float | None = None
+        self,
+        operation: str,
+        value: float,
+        second_value: float | None = None,
+        *,
+        target: str | None = None,
     ) -> None:
         try:
-            source = self.source_panel.table.current_map()
-            mask = np.zeros_like(source.z, dtype=bool)
-            for index in self.source_panel.table.selectedIndexes():
-                mask[index.row(), index.column()] = True
-            proposed = apply_map_math(source, mask, operation, value, second_value)
+            target, panel, current = self._map_target(target)
+            mask = self._selection_mask(panel, current)
+            proposed = apply_map_math(current, mask, operation, value, second_value)
         except MapValidationError as exc:
             self._error(str(exc), "Cannot apply selection math")
             return
-        changed = int(np.count_nonzero(~np.isclose(source.z, proposed.z, atol=1e-12)))
-        self.set_source_map(proposed, reset_target=False)
-        self.source_panel.set_badges(
-            [(f"{proposed.columns} × {proposed.rows}", False), (f"{changed} changed", changed > 0)]
-        )
+        self._commit_map_change(target, proposed)
         self.statusBar().showMessage(
-            f"{MATH_OPERATIONS[operation]} applied to {int(np.count_nonzero(mask))} cells; "
+            f"{MATH_OPERATIONS[operation]} applied to "
+            f"{int(np.count_nonzero(mask))} {target} cells; "
             "Ctrl+Z restores the previous values.",
             7000,
         )
 
-    def compare_clipboard_map(self) -> None:
-        if self.source_data is None:
-            self._error("Load a source map first.", "No source map")
-            return
+    def compare_clipboard_map(self, target: str | None = None) -> None:
         try:
+            target, _panel, current = self._map_target(target)
             payload = parse_clipboard(QApplication.clipboard().text(), name="Comparison map")
             if payload.kind != "table" or payload.map_data is None:
                 raise ClipboardFormatError(
                     "Copy a full RomRaider [Table3D] or Excel-style map for comparison."
                 )
-            source = self.source_panel.table.current_map()
-            comparison = compare_maps(source, payload.map_data)
+            comparison = compare_maps(current, payload.map_data)
         except (ClipboardFormatError, MapValidationError, ValueError) as exc:
             self._error(str(exc), "Cannot compare maps")
             return
         dialog = MapComparisonDialog(comparison, self.decimals.value(), self)
         if dialog.exec_() != QDialog.Accepted or dialog.merge_mask is None:
-            self.statusBar().showMessage("Map comparison closed; source values unchanged.", 5000)
+            self.statusBar().showMessage(f"Map comparison closed; {target} values unchanged.", 5000)
             return
         try:
             merged = merge_comparison(comparison, dialog.merge_mask)
@@ -1414,9 +1592,9 @@ class ECUMapMainWindow(QMainWindow):
             self._error(str(exc), "Cannot merge comparison")
             return
         count = int(np.count_nonzero(dialog.merge_mask))
-        self.set_source_map(merged, reset_target=False)
+        self._commit_map_change(target, merged)
         self.statusBar().showMessage(
-            f"Merged {count} comparison cells. Ctrl+Z restores the previous source map.",
+            f"Merged {count} comparison cells into the {target}. Ctrl+Z restores them.",
             7000,
         )
 
@@ -1565,7 +1743,7 @@ class ECUMapMainWindow(QMainWindow):
         warnings = result.extrapolated_cells
         self.result_panel.set_badges(
             [
-                (f"{result.map_data.columns} × {result.map_data.rows}", False),
+                (f"{result.map_data.columns}×{result.map_data.rows}", False),
                 (METHOD_LABELS[result.method], False),
                 (f"{warnings} extrapolated", warnings > 0),
             ]
@@ -1577,6 +1755,7 @@ class ECUMapMainWindow(QMainWindow):
         self.copy_excel_button.setEnabled(True)
         self.safety_report_button.setEnabled(True)
         self.result_visualize_button.setEnabled(True)
+        self._set_result_table_actions_enabled(True)
         self.delta_visualize_button.setEnabled(result.method != "bilinear" or has_difference)
         self._update_history_actions()
 
@@ -1597,8 +1776,8 @@ class ECUMapMainWindow(QMainWindow):
     def use_source_axes(self) -> None:
         if self.source_data is None:
             return
-        self.target_x_edit.setPlainText(axis_to_text(self.source_data.x))
-        self.target_y_edit.setPlainText(axis_to_text(self.source_data.y))
+        self.target_x_edit.setPlainText(axis_to_text(self.source_data.x, 6))
+        self.target_y_edit.setPlainText(axis_to_text(self.source_data.y, 6))
         self.column_count.setValue(self.source_data.columns)
         self.row_count.setValue(self.source_data.rows)
         self.reset_auto_range()
@@ -1647,8 +1826,8 @@ class ECUMapMainWindow(QMainWindow):
             x, y = self._automatic_axes()
             # Keep Custom Axes synchronized so users can inspect or fine-tune the
             # automatically generated breakpoints without re-entering them.
-            self.target_x_edit.setPlainText(axis_to_text(x))
-            self.target_y_edit.setPlainText(axis_to_text(y))
+            self.target_x_edit.setPlainText(axis_to_text(x, 6))
+            self.target_y_edit.setPlainText(axis_to_text(y, 6))
             return x, y
         return (
             parse_axis_text(self.target_x_edit.toPlainText(), "Target X"),
@@ -1685,8 +1864,8 @@ class ECUMapMainWindow(QMainWindow):
         except MapValidationError as exc:
             self._error(str(exc), "Invalid automatic range")
             return
-        self.target_x_edit.setPlainText(axis_to_text(x))
-        self.target_y_edit.setPlainText(axis_to_text(y))
+        self.target_x_edit.setPlainText(axis_to_text(x, 6))
+        self.target_y_edit.setPlainText(axis_to_text(y, 6))
         self.statusBar().showMessage(
             f"Generated automatic {x.size} × {y.size} axes with constant spacing.", 4000
         )
@@ -1730,7 +1909,7 @@ class ECUMapMainWindow(QMainWindow):
         warnings = result.extrapolated_cells
         self.result_panel.set_badges(
             [
-                (f"{result.map_data.columns} × {result.map_data.rows}", False),
+                (f"{result.map_data.columns}×{result.map_data.rows}", False),
                 (method, False),
                 (f"{warnings} extrapolated", warnings > 0),
             ]
@@ -1747,6 +1926,7 @@ class ECUMapMainWindow(QMainWindow):
         self.copy_excel_button.setEnabled(True)
         self.safety_report_button.setEnabled(True)
         self.result_visualize_button.setEnabled(True)
+        self._set_result_table_actions_enabled(True)
         self.delta_visualize_button.setEnabled(result.method != "bilinear" or has_difference)
         self._update_history_actions()
         self.statusBar().showMessage(
@@ -1755,10 +1935,41 @@ class ECUMapMainWindow(QMainWindow):
             7000,
         )
 
-    def _set_edited_result(self, map_data: MapData, *, refresh_table: bool) -> None:
+    def _set_edited_result(
+        self,
+        map_data: MapData,
+        *,
+        refresh_table: bool,
+        reference_result: ResampleResult | None = None,
+    ) -> None:
         if self.result is None:
             return
-        reference = self.result.bilinear_reference
+        axes_changed = not np.array_equal(
+            map_data.x, self.result.bilinear_reference.x
+        ) or not np.array_equal(map_data.y, self.result.bilinear_reference.y)
+        if reference_result is None and axes_changed:
+            reference_result = resample_map(
+                self.source_panel.table.current_map(),
+                map_data.x,
+                map_data.y,
+                method=self.result.method,
+                extrapolation=self.result.extrapolation,
+                maximum_edge_intervals=self.edge_limit.value(),
+            )
+        if axes_changed:
+            self.target_x_edit.setPlainText(axis_to_text(map_data.x, 6))
+            self.target_y_edit.setPlainText(axis_to_text(map_data.y, 6))
+            self.target_mode_tabs.setCurrentIndex(1)
+        reference = (
+            reference_result.bilinear_reference
+            if reference_result is not None
+            else self.result.bilinear_reference
+        )
+        extrapolated_mask = (
+            reference_result.extrapolated_mask
+            if reference_result is not None
+            else self.result.extrapolated_mask
+        )
         delta = MapData(
             map_data.x,
             map_data.y,
@@ -1767,7 +1978,7 @@ class ECUMapMainWindow(QMainWindow):
         )
         self.result = ResampleResult(
             map_data,
-            self.result.extrapolated_mask,
+            extrapolated_mask,
             reference,
             delta,
             self.result.method,
@@ -1793,7 +2004,7 @@ class ECUMapMainWindow(QMainWindow):
         changed = int(np.count_nonzero(~np.isclose(delta.z, 0.0, atol=1e-12)))
         warnings = self.result.extrapolated_cells
         badges = [
-            (f"{map_data.columns} × {map_data.rows}", False),
+            (f"{map_data.columns}×{map_data.rows}", False),
             (METHOD_LABELS[self.result.method], False),
             (f"{warnings} extrapolated", warnings > 0),
         ]
@@ -1844,6 +2055,7 @@ class ECUMapMainWindow(QMainWindow):
         self.safety_report_button.setEnabled(False)
         if hasattr(self, "result_visualize_button"):
             self.result_visualize_button.setEnabled(False)
+            self._set_result_table_actions_enabled(False)
             self.delta_visualize_button.setEnabled(False)
         self.statusBar().showMessage(message, 5000)
 

@@ -520,7 +520,7 @@ def build_story():
                     ],
                     [
                         "RESULT",
-                        "Review and fine-tune generated values, run the safety report, then copy to RomRaider or TSV.",
+                        "Use the same editing, smoothing, math, comparison, axes, and visualization tools as Source, then export.",
                     ],
                     [
                         "VS BILINEAR",
@@ -839,6 +839,17 @@ def build_story():
             bullet(
                 "Non-contiguous selections preserve holes and leave those destination cells unchanged."
             ),
+            h2("Set selected cells directly"),
+            body(
+                "Select one cell or a range, type a number, and press Enter. Every selected "
+                "cell receives the value as one undoable edit in either Source or Result."
+            ),
+            h2("Interpolate a selected region"),
+            body(
+                "Select a row, column, or filled rectangle and choose Interpolate selected "
+                "region. The operation uses the real axis spacing and is available in Source "
+                "and Result."
+            ),
             h2("Selection math"),
             body(
                 "Select source cells or curve points, then choose Selection math. Add, "
@@ -975,6 +986,7 @@ def build_story():
                     ["Ctrl+S", "Save project"],
                     ["Ctrl+Z / Ctrl+Y", "Undo / redo in the active Source or Result context"],
                     ["Ctrl+C / Ctrl+V", "Copy or paste the selected cell block"],
+                    ["Type a value + Enter", "Set every selected Source or Result cell"],
                     ["Ctrl+Shift+C", "Copy the current result for RomRaider"],
                     ["Ctrl+- / Ctrl++ / Ctrl+0", "Table zoom out / in / reset"],
                     ["Ctrl + mouse wheel", "Table zoom"],

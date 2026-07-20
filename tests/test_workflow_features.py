@@ -8,15 +8,25 @@ import numpy as np
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5.QtWidgets import QApplication, QDialog
+from PyQt5.QtWidgets import QApplication, QDialog, QDialogButtonBox
 from PyQt5.QtCore import Qt
+from PyQt5.QtTest import QTest
+from PyQt5.QtWidgets import QLineEdit
 
 from ecu_map_tool.app import create_application
 from ecu_map_tool.clipboard import parse_clipboard
-from ecu_map_tool.curve_window import CurveWindow
+from ecu_map_tool.curve_window import CurveSelectionMathDialog, CurveWindow
+from ecu_map_tool.curve_widgets import CurveTableWidget
 from ecu_map_tool.features import compare_maps, merge_comparison
-from ecu_map_tool.main_window import ECUMapMainWindow, MapComparisonDialog, SafetyReportDialog
+from ecu_map_tool.main_window import (
+    AxisDialog,
+    ECUMapMainWindow,
+    MapComparisonDialog,
+    SafetyReportDialog,
+    SelectionMathDialog,
+)
 from ecu_map_tool.model import CurveData, MapData
+from ecu_map_tool.widgets import MapTableWidget
 
 
 class WorkflowFeatureTests(unittest.TestCase):
@@ -59,7 +69,10 @@ class WorkflowFeatureTests(unittest.TestCase):
 
     def test_map_and_curve_tables_have_zoom_controls_and_unelided_tabs(self):
         window = ECUMapMainWindow()
+        window.resize(1420, 900)
         window.load_demo_map()
+        window.show()
+        self.app.processEvents()
         table = window.source_panel.table
         self.assertEqual(table.zoom_percent, 90)
         self.assertEqual(table.columnWidth(0), 74)
@@ -76,8 +89,46 @@ class WorkflowFeatureTests(unittest.TestCase):
         self.assertEqual(window.tabs.tabText(2), "VS BILINEAR")
         self.assertEqual(window.tabs.tabBar().EXTRA_GLYPH_WIDTH, 18)
         self.assertGreater(window.tabs.tabBar().tabSizeHint(2).width(), 182)
-        self.assertEqual(window.compare_button.text(), "Compare clipboard")
-        self.assertEqual(window.copy_result_button.text(), "Copy to RR")
+        self.assertEqual(window.compare_button.text(), "Compare")
+        self.assertEqual(window.copy_result_button.text(), "Copy RR")
+        self.assertEqual(
+            [window.method_combo.itemText(index) for index in range(3)],
+            ["Bilinear", "PCHIP", "Nearest"],
+        )
+        self.assertEqual(
+            [window.extrapolation_combo.itemText(index) for index in range(5)],
+            ["Hold", "Linear", "Local trend (4 × 4)", "Global trend", "Disabled"],
+        )
+        for button in (
+            window.source_visualize_button,
+            window.smoothing_button,
+            window.math_button,
+            window.compare_button,
+            window.copy_source_button,
+        ):
+            self.assertGreaterEqual(button.width(), button.minimumSizeHint().width())
+
+        window.generate_result()
+        self.app.processEvents()
+        self.assertIn(
+            "Interpolate selected region",
+            [action.text() for action in window.smoothing_button.menu().actions()],
+        )
+        self.assertIn(
+            "Interpolate selected region",
+            [action.text() for action in window.result_smoothing_button.menu().actions()],
+        )
+        for button in (
+            window.result_smoothing_button,
+            window.result_math_button,
+            window.result_compare_button,
+            window.result_axes_button,
+            window.copy_excel_button,
+            window.copy_result_button,
+            window.safety_report_button,
+            window.result_visualize_button,
+        ):
+            self.assertGreaterEqual(button.width(), button.minimumSizeHint().width())
         window.close()
 
         curve = CurveWindow(CurveData([0, 1, 2], [10, 20, 30]))
@@ -85,7 +136,67 @@ class WorkflowFeatureTests(unittest.TestCase):
         self.assertEqual(curve.source_panel.table.columnWidth(0), 90)
         self.assertEqual(curve.tabs.tabBar().elideMode(), Qt.ElideNone)
         self.assertEqual(curve.tabs.tabText(2), "VS LINEAR")
+        self.assertEqual(
+            [curve.method_combo.itemText(index) for index in range(3)],
+            ["Linear", "PCHIP", "Nearest"],
+        )
+        self.assertEqual(
+            [curve.extrapolation_combo.itemText(index) for index in range(3)],
+            ["Hold", "Linear", "Disabled"],
+        )
         curve.close()
+
+    def test_table_axis_labels_are_coarse_and_fit_stays_inside_viewport(self):
+        map_data = MapData(
+            np.linspace(25.0098, 900.0, 20),
+            np.linspace(450.25, 7200.0, 20),
+            np.zeros((20, 20)),
+        )
+        map_table = MapTableWidget()
+        map_table.resize(1050, 700)
+        map_table.set_map(map_data)
+        map_table.show()
+        self.app.processEvents()
+        map_table.fit_to_view()
+        self.app.processEvents()
+
+        self.assertEqual(map_table.horizontalHeaderItem(0).text(), "25")
+        self.assertEqual(map_table.verticalHeaderItem(0).text(), "450")
+        self.assertGreaterEqual(
+            map_table.rowHeight(0), map_table.verticalHeader().sectionSizeHint(0)
+        )
+        np.testing.assert_allclose(map_table.current_map().x, map_data.x)
+        np.testing.assert_allclose(map_table.current_map().y, map_data.y)
+        self.assertLessEqual(map_table.horizontalHeader().length(), map_table.viewport().width())
+        self.assertLessEqual(map_table.verticalHeader().length(), map_table.viewport().height())
+        fitted_zoom = map_table.zoom_percent
+        map_table.set_zoom(fitted_zoom + 1, snap_to_step=False)
+        self.app.processEvents()
+        self.assertTrue(
+            map_table.horizontalHeader().length() > map_table.viewport().width()
+            or map_table.verticalHeader().length() > map_table.viewport().height()
+        )
+        map_table.close()
+
+        curve_data = CurveData(np.linspace(25.0098, 900.0, 20), np.zeros(20))
+        curve_table = CurveTableWidget()
+        curve_table.resize(1200, 100)
+        curve_table.set_curve(curve_data)
+        curve_table.show()
+        self.app.processEvents()
+        curve_table.fit_to_view()
+        self.app.processEvents()
+
+        self.assertEqual(curve_table.horizontalHeaderItem(0).text(), "25")
+        np.testing.assert_allclose(curve_table.current_curve().x, curve_data.x)
+        self.assertLessEqual(
+            curve_table.horizontalHeader().length(), curve_table.viewport().width()
+        )
+        fitted_zoom = curve_table.zoom_percent
+        curve_table.set_zoom(fitted_zoom + 1, snap_to_step=False)
+        self.app.processEvents()
+        self.assertGreater(curve_table.horizontalHeader().length(), curve_table.viewport().width())
+        curve_table.close()
 
     def test_map_selection_math_is_one_undoable_change(self):
         window = ECUMapMainWindow()
@@ -99,6 +210,110 @@ class WorkflowFeatureTests(unittest.TestCase):
         self.assertAlmostEqual(adjusted[2, 3], original[2, 3] + 5)
         window.undo_source()
         np.testing.assert_allclose(window.source_panel.table.current_map().z, original)
+        window.close()
+
+    def test_typing_a_value_updates_the_selected_map_cells_once(self):
+        table = MapTableWidget()
+        table.set_map(
+            MapData([0, 1], [0, 1], [[1, 2], [3, 4]]),
+            editable=True,
+            decimals=3,
+        )
+        table.set_zoom(50)
+        table.setCurrentCell(0, 0)
+        table.item(0, 1).setSelected(True)
+        table.item(1, 0).setSelected(True)
+        edits = []
+        table.dataEdited.connect(lambda: edits.append(True))
+        table.show()
+        table.setFocus()
+
+        QTest.keyClick(table, Qt.Key_1)
+        editor = table.findChild(QLineEdit)
+        self.assertIsNotNone(editor)
+        self.assertIn("padding: 0 2px", editor.styleSheet())
+        QTest.keyClicks(editor, "2.5")
+        QTest.keyClick(editor, Qt.Key_Return)
+        self.app.processEvents()
+
+        np.testing.assert_allclose(table.current_map().z, [[12.5, 12.5], [12.5, 4]])
+        self.assertEqual(edits, [True])
+        table.close()
+
+    def test_selection_math_apply_buttons_accept_the_dialogs(self):
+        for dialog in (SelectionMathDialog(1), CurveSelectionMathDialog(1)):
+            buttons = dialog.findChild(QDialogButtonBox)
+            buttons.button(QDialogButtonBox.Apply).click()
+            self.assertEqual(dialog.result(), QDialog.Accepted)
+
+    def test_axis_and_math_inputs_use_compact_precision(self):
+        x = np.asarray([25.00984206912337, 75.0083314259556])
+        y = np.asarray([450.123456789, 900.987654321])
+        axes = AxisDialog(x, y)
+        self.assertEqual(axes.x_edit.toPlainText(), "25.0098, 75.0083")
+        self.assertEqual(axes.y_edit.toPlainText(), "450.123, 900.988")
+
+        window = ECUMapMainWindow()
+        window.set_source_map(MapData(x, y, np.ones((2, 2))))
+        window.use_source_axes()
+        self.assertEqual(window.target_x_edit.toPlainText(), "25.0098, 75.0083")
+        self.assertEqual(window.target_y_edit.toPlainText(), "450.123, 900.988")
+
+        map_math = SelectionMathDialog(1)
+        curve_math = CurveSelectionMathDialog(1)
+        self.assertEqual(map_math.value.decimals(), 4)
+        self.assertEqual(map_math.second_value.decimals(), 4)
+        self.assertEqual(curve_math.value.decimals(), 4)
+        self.assertEqual(curve_math.second_value.decimals(), 4)
+
+    def test_selection_interpolation_and_math_edit_source_and_result_independently(self):
+        x = np.asarray([0.0, 1.0, 3.0])
+        y = np.asarray([0.0, 2.0, 5.0])
+        expected = 1.0 + 2.0 * x[None, :] + 3.0 * y[:, None]
+        damaged = expected.copy()
+        damaged[1, 1] = 999.0
+        window = ECUMapMainWindow()
+        window.set_source_map(MapData(x, y, damaged))
+
+        source_table = window.source_panel.table
+        source_table.selectAll()
+        window.interpolate_source_selection()
+        np.testing.assert_allclose(source_table.current_map().z, expected)
+        window.undo_source()
+        self.assertEqual(window.source_panel.table.current_map().z[1, 1], 999.0)
+        window.redo_source()
+
+        window.generate_result()
+        result_table = window.result_panel.table
+        expected_result = (
+            1.0 + 2.0 * window.result.map_data.x[None, :] + 3.0 * window.result.map_data.y[:, None]
+        )
+        result_table.item(1, 1).setText("999")
+        self.app.processEvents()
+        result_table.selectAll()
+        window.interpolate_result_selection()
+        np.testing.assert_allclose(window.result.map_data.z, expected_result)
+        np.testing.assert_allclose(window.source_panel.table.current_map().z, expected)
+        window.undo_result()
+        self.assertEqual(window.result.map_data.z[1, 1], 999.0)
+        window.redo_result()
+
+        window.result_panel.table.item(1, 1).setSelected(True)
+        window.apply_selection_math("add", 5, target="result")
+        self.assertEqual(window.result.map_data.z[1, 1], expected_result[1, 1] + 5)
+        self.assertEqual(window.source_panel.table.current_map().z[1, 1], expected[1, 1])
+
+        previous_axes = window.result.map_data.x.copy()
+        with patch("ecu_map_tool.main_window.AxisDialog") as dialog_class:
+            dialog = dialog_class.return_value
+            dialog.exec_.return_value = QDialog.Accepted
+            dialog.x_values = previous_axes + 0.25
+            dialog.y_values = window.result.map_data.y.copy()
+            window.edit_result_axes()
+        np.testing.assert_allclose(window.result.map_data.x, previous_axes + 0.25)
+        self.assertEqual(window.target_mode_tabs.currentIndex(), 1)
+        window.undo_result()
+        np.testing.assert_allclose(window.result.map_data.x, previous_axes)
         window.close()
 
     def test_selected_cell_block_copies_and_pastes_at_selected_anchor(self):

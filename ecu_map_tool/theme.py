@@ -138,7 +138,12 @@ QFrame#MapHeader {
     border-bottom: 1px solid #26334a;
 }
 
-QFrame#MapHeader QPushButton {
+QFrame#MapActions {
+    background: #101827;
+    border-bottom: 1px solid #26334a;
+}
+
+QFrame#MapActions QPushButton {
     min-height: 30px;
     padding: 0 9px;
     font-size: 9pt;
@@ -320,6 +325,10 @@ QHeaderView::section {
     border-bottom: 1px solid #29364b;
     padding: 7px 6px;
     font-weight: 650;
+}
+
+QHeaderView::section:vertical {
+    padding: 0 6px;
 }
 
 QHeaderView {

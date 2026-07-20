@@ -26,7 +26,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .model import CurveData, MapValidationError, format_number
+from .model import CurveData, MapValidationError, format_axis_label, format_number
 from .widgets import HeatmapLegend, TableZoomControls, contrast_color, palette_color
 
 
@@ -205,8 +205,10 @@ class CurveTableWidget(QTableWidget):
     def zoom_percent(self) -> int:
         return self._zoom_percent
 
-    def set_zoom(self, percent: int) -> None:
-        percent = max(50, min(180, int(round(percent / 10.0) * 10)))
+    def set_zoom(self, percent: int, *, snap_to_step: bool = True) -> None:
+        if snap_to_step:
+            percent = int(round(percent / 10.0) * 10)
+        percent = max(50, min(180, int(percent)))
         self._zoom_percent = percent
         scale = percent / 100.0
         column_width = max(50, round(self._base_column_width * scale))
@@ -237,9 +239,20 @@ class CurveTableWidget(QTableWidget):
     def fit_to_view(self) -> None:
         if self.columnCount() < 1:
             return
-        available_width = max(1, self.viewport().width() - 2)
-        percent = int(100.0 * available_width / (self.columnCount() * self._base_column_width))
-        self.set_zoom(percent)
+        low, high, best = 50, 180, 50
+        while low <= high:
+            candidate = (low + high) // 2
+            self.set_zoom(candidate, snap_to_step=False)
+            self.updateGeometries()
+            self.updateGeometries()
+            if self.horizontalHeader().length() <= self.viewport().width():
+                best = candidate
+                low = candidate + 1
+            else:
+                high = candidate - 1
+        self.set_zoom(best, snap_to_step=False)
+        self.updateGeometries()
+        self.updateGeometries()
 
     def set_curve(
         self,
@@ -265,7 +278,7 @@ class CurveTableWidget(QTableWidget):
             self.setRowCount(1)
             self.setColumnCount(curve.size)
             self.setVerticalHeaderLabels(["Value"])
-            self.setHorizontalHeaderLabels([format_number(value, 8) for value in curve.x])
+            self.setHorizontalHeaderLabels([format_axis_label(value) for value in curve.x])
             self.setEditTriggers(
                 QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
                 if editable
@@ -434,10 +447,15 @@ class CurvePanel(QWidget):
         self.badge_layout = QHBoxLayout()
         self.badge_layout.setSpacing(4)
         header_layout.addLayout(self.badge_layout)
-        self.action_layout = QHBoxLayout()
-        self.action_layout.setSpacing(5)
-        header_layout.addLayout(self.action_layout)
         layout.addWidget(header)
+
+        self.action_bar = QFrame()
+        self.action_bar.setObjectName("MapActions")
+        self.action_layout = QHBoxLayout(self.action_bar)
+        self.action_layout.setContentsMargins(12, 5, 12, 5)
+        self.action_layout.setSpacing(5)
+        self.action_layout.addStretch(1)
+        layout.addWidget(self.action_bar)
 
         self.plot = CurvePlotWidget()
         layout.addWidget(self.plot, 1)

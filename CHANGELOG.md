@@ -11,12 +11,23 @@ The project follows [Semantic Versioning](https://semver.org/).
 ### Added
 
 - Added boundary-matched local 4 × 4 and global whole-table least-squares trend extrapolation.
+- Added deterministic selected-row, selected-column, and rectangular interpolation to both Source and Result tables.
+- Added matching smoothing, math, comparison, axis-editing, visualization, and export actions to the Result table.
+- Added direct numeric entry across selected cells: type a value and press Enter to apply one undoable edit.
 - Added standard PyInstaller and alternative Nuitka Windows installers.
 
 ### Changed
 
+- Improved table fitting, coarse axis labels, compact axis/math inputs, and low-zoom cell editing.
+- Made the left control panel reliably resizable after loading or pasting a table.
+- Prevented mouse-wheel scrolling from changing combo-box selections.
 - Updated the official GitHub workflow actions to their current Node 24-compatible major versions.
 - Licensed the project and distributed release bundles under the MIT License.
+
+### Fixed
+
+- Fixed Apply in the map and curve selection-math dialogs.
+- Fixed clipped table headers, action labels, axis values, and in-cell editor digits.
 
 ## [1.1.0] - 2026-07-11
 

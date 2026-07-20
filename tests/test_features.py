@@ -9,6 +9,7 @@ from ecu_map_tool.features import (
     apply_map_math,
     build_safety_report,
     compare_maps,
+    interpolate_map_selection,
     merge_comparison,
 )
 from ecu_map_tool.history import UndoHistory
@@ -72,6 +73,20 @@ class FeatureCoreTests(unittest.TestCase):
         np.testing.assert_allclose(adjusted.values, [4, 4, 12])
         with self.assertRaises(MapValidationError):
             apply_curve_math(curve, [False, False, False], "add", 1)
+
+    def test_selection_interpolation_uses_real_axis_spacing(self):
+        x = np.asarray([0.0, 1.0, 3.0])
+        y = np.asarray([0.0, 2.0, 5.0])
+        expected = 1.0 + 2.0 * x[None, :] + 3.0 * y[:, None]
+        damaged = expected.copy()
+        damaged[1, 1] = 999.0
+        source = MapData(x, y, damaged)
+        repaired = interpolate_map_selection(source, np.ones((3, 3), dtype=bool))
+        np.testing.assert_allclose(repaired.z, expected)
+
+        invalid = np.eye(3, dtype=bool)
+        with self.assertRaises(MapValidationError):
+            interpolate_map_selection(source, invalid)
 
     def test_project_round_trip_preserves_generated_result(self):
         result = resample_map(self.base, [0, 0.5, 2], [-1, 1, 2], method="bilinear")

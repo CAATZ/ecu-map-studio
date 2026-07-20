@@ -9,12 +9,15 @@ from PyQt5.QtGui import QColor, QBrush, QKeySequence, QLinearGradient, QPainter,
 from PyQt5.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSizePolicy,
+    QStyledItemDelegate,
     QTabBar,
     QTabWidget,
     QTableWidget,
@@ -23,7 +26,7 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
-from .model import MapData, MapValidationError, format_number
+from .model import MapData, MapValidationError, format_axis_label, format_number
 
 
 VIRIDIS = (
@@ -53,6 +56,13 @@ class ReadableTabBar(QTabBar):
 
     def minimumTabSizeHint(self, index: int) -> QSize:  # noqa: N802 (Qt API)
         return self.tabSizeHint(index)
+
+
+class WheelSafeComboBox(QComboBox):
+    """Leave mouse-wheel scrolling to the surrounding panel."""
+
+    def wheelEvent(self, event) -> None:  # noqa: N802 (Qt API)
+        event.ignore()
 
 
 class ReadableTabWidget(QTabWidget):
@@ -201,6 +211,28 @@ class TableZoomControls(QWidget):
         table.zoomChanged.connect(lambda percent: self.reset_button.setText(f"{percent}%"))
 
 
+class _MapCellDelegate(QStyledItemDelegate):
+    def createEditor(self, parent, _option, _index):
+        editor = QLineEdit(parent)
+        editor.setFrame(False)
+        editor.setAlignment(Qt.AlignCenter)
+        editor.setStyleSheet("padding: 0 2px; border-radius: 0;")
+        return editor
+
+    def setEditorData(self, editor, index) -> None:
+        editor.setText(str(index.data(Qt.EditRole)))
+        editor.selectAll()
+
+    def setModelData(self, editor, model, index) -> None:
+        try:
+            value = float(editor.text().strip().replace(",", "."))
+        except ValueError:
+            return
+        view = self.parent()
+        if np.isfinite(value) and isinstance(view, MapTableWidget):
+            view.set_selected_value(value, edited_index=index)
+
+
 class MapTableWidget(QTableWidget):
     CELL_MIME_TYPE = "application/x-ecu-map-studio-cells"
     pasteRequested = pyqtSignal()
@@ -223,6 +255,7 @@ class MapTableWidget(QTableWidget):
         self._zoom_percent = 90
 
         self.setAlternatingRowColors(False)
+        self.setItemDelegate(_MapCellDelegate(self))
         self.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.setSelectionBehavior(QAbstractItemView.SelectItems)
         self.setShowGrid(True)
@@ -240,8 +273,10 @@ class MapTableWidget(QTableWidget):
     def zoom_percent(self) -> int:
         return self._zoom_percent
 
-    def set_zoom(self, percent: int) -> None:
-        percent = max(50, min(180, int(round(percent / 10.0) * 10)))
+    def set_zoom(self, percent: int, *, snap_to_step: bool = True) -> None:
+        if snap_to_step:
+            percent = int(round(percent / 10.0) * 10)
+        percent = max(50, min(180, int(percent)))
         self._zoom_percent = percent
         scale = percent / 100.0
         column_width = max(44, round(self._base_column_width * scale))
@@ -271,11 +306,25 @@ class MapTableWidget(QTableWidget):
     def fit_to_view(self) -> None:
         if self.rowCount() < 1 or self.columnCount() < 1:
             return
-        available_width = max(1, self.viewport().width() - 2)
-        available_height = max(1, self.viewport().height() - 2)
-        width_percent = 100.0 * available_width / (self.columnCount() * self._base_column_width)
-        height_percent = 100.0 * available_height / (self.rowCount() * self._base_row_height)
-        self.set_zoom(int(min(width_percent, height_percent)))
+        low, high, best = 50, 180, 50
+        while low <= high:
+            candidate = (low + high) // 2
+            self.set_zoom(candidate, snap_to_step=False)
+            # Two geometry passes settle both scrollbars after section sizes change.
+            self.updateGeometries()
+            self.updateGeometries()
+            fits = (
+                self.horizontalHeader().length() <= self.viewport().width()
+                and self.verticalHeader().length() <= self.viewport().height()
+            )
+            if fits:
+                best = candidate
+                low = candidate + 1
+            else:
+                high = candidate - 1
+        self.set_zoom(best, snap_to_step=False)
+        self.updateGeometries()
+        self.updateGeometries()
 
     def clear_map(self) -> None:
         self._updating = True
@@ -307,10 +356,10 @@ class MapTableWidget(QTableWidget):
         self.clear()
         self.setRowCount(map_data.rows)
         self.setColumnCount(map_data.columns)
-        self.setHorizontalHeaderLabels([format_number(value, 7) for value in map_data.x])
-        self.setVerticalHeaderLabels([format_number(value, 7) for value in map_data.y])
+        self.setHorizontalHeaderLabels([format_axis_label(value) for value in map_data.x])
+        self.setVerticalHeaderLabels([format_axis_label(value) for value in map_data.y])
         self.setEditTriggers(
-            QAbstractItemView.DoubleClicked | QAbstractItemView.EditKeyPressed
+            QAbstractItemView.DoubleClicked | QAbstractItemView.AnyKeyPressed
             if editable
             else QAbstractItemView.NoEditTriggers
         )
@@ -418,6 +467,39 @@ class MapTableWidget(QTableWidget):
                 )
             )
         return "\r\n".join(output)
+
+    def set_selected_value(self, value: float, *, edited_index=None) -> bool:
+        if not self._editable or not np.isfinite(value):
+            return False
+        selected = sorted({(index.row(), index.column()) for index in self.selectedIndexes()})
+        if edited_index is None:
+            coordinates = selected
+        else:
+            coordinate = (edited_index.row(), edited_index.column())
+            coordinates = selected if coordinate in selected and len(selected) > 1 else [coordinate]
+        if not coordinates:
+            return False
+        changed = False
+        previous_blocked = self.signalsBlocked()
+        previous_updating = self._updating
+        self._updating = True
+        self.blockSignals(True)
+        try:
+            for row, column in coordinates:
+                item = self.item(row, column)
+                previous = item.data(Qt.UserRole)
+                if previous is not None and float(previous) == value:
+                    continue
+                item.setText(f"{value:.{self._decimals}f}")
+                item.setData(Qt.UserRole, value)
+                changed = True
+        finally:
+            self.blockSignals(previous_blocked)
+            self._updating = previous_updating
+        if changed:
+            self.refresh_colors()
+            self.dataEdited.emit()
+        return changed
 
     def copy_selected_cells(self) -> bool:
         selected = self.selectedIndexes()
@@ -564,6 +646,16 @@ class MapTableWidget(QTableWidget):
                     self.pasteRequested.emit()
             event.accept()
             return
+        text = event.text()
+        command_modifier = Qt.ControlModifier | Qt.AltModifier
+        direct_value_key = (
+            bool(text)
+            and not (event.modifiers() & command_modifier)
+            and (text.isdigit() or text in {"-", "+", ".", ","})
+        )
+        if direct_value_key and self._editable and self.currentIndex().isValid():
+            if self.edit(self.currentIndex(), QAbstractItemView.AnyKeyPressed, event):
+                return
         super().keyPressEvent(event)
 
     def wheelEvent(self, event) -> None:  # noqa: N802 (Qt API)
@@ -613,10 +705,15 @@ class MapPanel(QWidget):
         self.badge_layout = QHBoxLayout()
         self.badge_layout.setSpacing(4)
         header_layout.addLayout(self.badge_layout)
-        self.action_layout = QHBoxLayout()
-        self.action_layout.setSpacing(5)
-        header_layout.addLayout(self.action_layout)
         root.addWidget(header)
+
+        self.action_bar = QFrame()
+        self.action_bar.setObjectName("MapActions")
+        self.action_layout = QHBoxLayout(self.action_bar)
+        self.action_layout.setContentsMargins(12, 5, 12, 5)
+        self.action_layout.setSpacing(5)
+        self.action_layout.addStretch(1)
+        root.addWidget(self.action_bar)
 
         self.table = MapTableWidget()
         root.addWidget(self.table, 1)
