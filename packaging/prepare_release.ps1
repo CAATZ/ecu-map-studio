@@ -78,6 +78,9 @@ try {
             & (Join-Path $Root 'build_exe.bat')
         } 'Executable build'
         Invoke-Checked {
+            & $Python 'packaging\capture_manual_screenshots.py'
+        } 'User manual screenshot capture'
+        Invoke-Checked {
             & $Python 'packaging\build_user_manual.py'
         } 'User manual build'
 
